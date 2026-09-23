@@ -5,7 +5,6 @@ def mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     ''' Malha quadrada - lc = 0.2 ## tamanho característico dos elementos (tamanho alvo) '''
 
     gmsh.initialize()
-
     gmsh.model.add('dominio')
     
     #pontos ## (x,y,z, tamanho do elemento)
@@ -36,7 +35,6 @@ def mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     gmsh.model.mesh.generate(dim=2) #o argumento é a dimensão do espaço a ser gerado
 
     ##extraindo nós
-
     node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
     print('Nós antes do reshape:') ## REMOVER 
     print(node_coords) ## REMOVER 
@@ -48,6 +46,12 @@ def mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     print(node_coords) ## REMOVER 
     print('Número de Nós:',len(nodes)) ## REMOVER 
 
+    ##mapa de tags do gmsh para indices do numpy
+    #traduzindo as tags para indices python (usando dicionário)
+    node_map = {tag: i for i,tag in enumerate(node_tags)}
+
+    #extraindo elementos (triangulos) 
+    7 chat
     
 
 
