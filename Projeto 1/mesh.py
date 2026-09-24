@@ -1,7 +1,7 @@
 import gmsh
 import numpy as np
 
-def mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
+def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     ''' Malha quadrada - lc = 0.2 ## tamanho característico dos elementos (tamanho alvo) '''
 
     gmsh.initialize()
@@ -57,7 +57,7 @@ def mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     for etype, tags, node_tags_element in zip(element_types,element_tags,element_node_tags):
         if etype == 2: ##3 é o triângulo linear
 
-
+            
 
 
     if show_mesh == True:
