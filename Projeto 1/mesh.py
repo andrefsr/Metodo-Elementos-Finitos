@@ -51,9 +51,11 @@ def mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     node_map = {tag: i for i,tag in enumerate(node_tags)}
 
     #extraindo elementos (triangulos) 
-    7 chat
+    element_types, element_tags, element_node_tags = gmsh.model.mesh.getElements(dim=2)
     
-
+    triangles = None
+    for etype, tags, node_tags_element in zip(element_types,element_tags,element_node_tags):
+        if etype == 2: ##3 é o triângulo linear
 
 
 
