@@ -38,15 +38,15 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
 
     ##extraindo nós
     node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-    print('Nós antes do reshape:') ## REMOVER 
-    print(node_coords) ## REMOVER 
+    #print('Nós antes do reshape:') ## REMOVER 
+    #print(node_coords) ## REMOVER 
     nodes_coords = np.array(node_coords).reshape(-1,3)
 
     nodes = nodes_coords[:, :2] ##pegando somente a coordenada x e y
 
-    print('Nós:') ## REMOVER 
-    print(node_coords) ## REMOVER 
-    print('Número de Nós:',len(nodes)) ## REMOVER 
+    #print('Nós:') ## REMOVER 
+    #print(node_coords) ## REMOVER 
+    #print('Número de Nós:',len(nodes)) ## REMOVER 
 
     ##mapa de tags do gmsh para indices do numpy
     #traduzindo as tags para indices python (usando dicionário)
@@ -58,7 +58,7 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     triangles = None
     for etype, tags, node_tags_element in zip(element_types,element_tags,element_node_tags):
         if etype == 2: ##3 é o triângulo linear
-            triangles = np.arrray([node_map[tag] for tag in node_tags_element]).reshape(-1,3)
+            triangles = np.array([node_map[tag] for tag in node_tags_element]).reshape(-1,3)
             break
 
     ##construindo as faces
@@ -117,33 +117,33 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
 
     if show_mesh == True:
 
-        print('\nNós:')
-        print(node_coords)
+        #print('\nNós:')
+        #print(node_coords)
 
-        print('\nNúmero de Nós:',len(nodes))
+        #print('\nNúmero de Nós:',len(nodes))
 
-        print('\nNúmero de elementos:',len(triangles))
+        #print('\nNúmero de elementos:',len(triangles))
 
-        print('\nConectividade:')
-        print(triangles)
+        #print('\nConectividade:')
+        #print(triangles)
 
-        print("\nNúmero total de faces",len(faces))
-        print("Faces de fronteira",len(boundary_faces))
-        print('Faces internas',len(interior_faces))
+        #print("\nNúmero total de faces",len(faces))
+        #print("Faces de fronteira",len(boundary_faces))
+        #print('Faces internas',len(interior_faces))
 
-        print('\nVizinhança:')
-        print(neighbors)
+        #print('\nVizinhança:')
+        #print(neighbors)
 
-        print('\nNós da fronteira:')
-        print(boundary_faces)
+        #print('\nNós da fronteira:')
+        #print(boundary_faces)
 
         plt.figure()
-        plt.triplot(nodes[:,0],nodes[:1],triangles)
-        plt.scatter(nodes[:,0],nodes[:1],s=10)
+        plt.grid(alpha=0.3)
+        plt.triplot(nodes[:,0],nodes[:,1],triangles)
+        plt.scatter(nodes[:,0],nodes[:,1],s=20,color='red')
         plt.xlabel('x')
         plt.ylabel('y')
         plt.axis('equal')
-        plt.grid()
         plt.show
 
     gmsh.finalize
