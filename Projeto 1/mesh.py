@@ -1,5 +1,7 @@
 import gmsh
 import numpy as np
+import matplotlib.pyplot as plt
+from types import SimpleNamespace
 
 def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     ''' Malha quadrada - lc = 0.2 ## tamanho característico dos elementos (tamanho alvo) '''
@@ -56,11 +58,98 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     triangles = None
     for etype, tags, node_tags_element in zip(element_types,element_tags,element_node_tags):
         if etype == 2: ##3 é o triângulo linear
+            triangles = np.arrray([node_map[tag] for tag in node_tags_element]).reshape(-1,3)
+            break
 
-            
+    ##construindo as faces
+    local_faces = [(0,1),(1,2),(2,0)]
 
+    ##dicionario: chave = face : valor = [elemento, face_local]
+    face_dict = {}
+
+    for elem_id, elem in enumerate(triangles):
+        for local_face_id, (i,j) in enumerate(local_faces):
+            n1 = elem[i]
+            n2 = elem[j]
+
+            face = tuple(sorted((n1,n2))) ##ordenar para identificar a mesma face independente da orientação
+
+            if face not in face_dict:
+                face_dict[face] = []
+
+            face_dict[face].append((elem_id,local_face_id))
+
+    ##separando faces internas e de fronteira
+    faces = []
+    boundary_faces = []
+    interior_faces = []
+
+    for face, connected_elements in face_dict.items():
+        faces.append(face)
+
+        if len(connected_elements) == 1:
+            boundary_faces.append(face)
+
+        elif len(connected_elements) == 2:
+            interior_faces.append(face)
+
+    faces = np.array(faces)
+    boundary_faces = np.array(boundary_faces)
+    interior_faces = np.array(interior_faces)
+
+    ##identificando elementos vizinhos
+
+    #neighbors[e,f] onde e = elemento e f = face local
+    #se for -1: face de fronteira, do contrário é o índice do elemento vizinho
+
+    neighbors = -np.ones((len(triangles),3),dtype=int)
+
+    for face, connected_elements in face_dict.items():
+        if len(connected_elements) == 2:
+
+            (e1,f1), (e2,f2) = connected_elements
+
+            neighbors[e1,f1] = e2
+            neighbors[e2,f2] = e1
+
+    ##nós da fronteira
+    boundary_nodes = np.unique(boundary_faces.flatten())
 
     if show_mesh == True:
-        ### printar malhamatplotlib
 
-    return 
+        print('\nNós:')
+        print(node_coords)
+
+        print('\nNúmero de Nós:',len(nodes))
+
+        print('\nNúmero de elementos:',len(triangles))
+
+        print('\nConectividade:')
+        print(triangles)
+
+        print("\nNúmero total de faces",len(faces))
+        print("Faces de fronteira",len(boundary_faces))
+        print('Faces internas',len(interior_faces))
+
+        print('\nVizinhança:')
+        print(neighbors)
+
+        print('\nNós da fronteira:')
+        print(boundary_faces)
+
+        plt.figure()
+        plt.triplot(nodes[:,0],nodes[:1],triangles)
+        plt.scatter(nodes[:,0],nodes[:1],s=10)
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.axis('equal')
+        plt.grid()
+        plt.show
+
+    gmsh.finalize
+    
+    msh = SimpleNamespace(
+        node_coords=node_coords, nodes=nodes, triangles=triangles, neighbors=neighbors,
+        faces=faces, boundary_faces=boundary_faces, interior_faces=interior_faces)
+
+    return msh 
