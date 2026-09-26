@@ -1,6 +1,6 @@
 import numpy as np
 from shape_functions import shape_functions
-from geometry import jacobian
+from geometry import jacobian, xi_eta_to_xy
 
 def triangle_quadrature(p):
 
@@ -37,14 +37,35 @@ def element_stiffness(nodes,p,k=1.0):
         _, dN = shape_functions(xi,eta,p)
 
         J = jacobian(xi,eta,nodes,p)
-
         detJ = np.linalg.det(J)
 
         dN_xy = dN @ np.linalg.inv(J).T
 
         B = dN_xy.T
 
-        Ke += k* (B.T @ B) * abs(detJ) * w
+        Ke += k* (B.T @ B) * abs(detJ) * w ##integração
 
     return Ke
 
+def element_load(nodes, p, f):
+    n = len(nodes)
+    Fe = np.zeros(n)
+
+    points, weights = triangle_quadrature(p)
+
+    for q in range(len(weights)):
+        xi, eta = points[q]
+        w = weights[q]
+
+        N, dN = shape_functions(xi,eta,p) ##funções de forma e suas derivadas
+
+        J = jacobian(xi,eta,nodes,p)
+        detJ = np.linalg.det(J)
+
+        x, y = xi_eta_to_xy(xi,eta,nodes,p) ##coordenadas físicas do ponto de Gauss
+
+        fq = f(x,y) ##fonte
+
+        Fe += N*fq*abs(detJ)*w
+
+    return Fe
