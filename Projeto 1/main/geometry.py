@@ -1,5 +1,5 @@
 import numpy as np
-from shape_functions import shape_functions
+from main.shape_functions import shape_functions
 
 def xi_eta_to_xy(xi, eta, nodes, p):
 

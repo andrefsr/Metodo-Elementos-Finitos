@@ -1,6 +1,6 @@
 import numpy as np
-from shape_functions import shape_functions
-from geometry import jacobian, xi_eta_to_xy
+from main.shape_functions import shape_functions
+from main.geometry import jacobian, xi_eta_to_xy
 
 def triangle_quadrature(p):
 
@@ -57,7 +57,7 @@ def element_load(nodes, p, f):
         xi, eta = points[q]
         w = weights[q]
 
-        N, dN = shape_functions(xi,eta,p) ##funções de forma e suas derivadas
+        N, _ = shape_functions(xi,eta,p) ##funções de forma e suas derivadas
 
         J = jacobian(xi,eta,nodes,p)
         detJ = np.linalg.det(J)

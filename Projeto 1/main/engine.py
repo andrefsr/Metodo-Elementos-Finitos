@@ -1,5 +1,5 @@
 import numpy as np
-from Matrices import element_stiffness, element_load
+from main.Matrices import element_stiffness, element_load
 
 
 def assemble_system(nodes, elements, p, f, k=1.0):
