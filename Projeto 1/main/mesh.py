@@ -303,16 +303,16 @@ def coax_mesh2D(
 
     
 
-    msh = SimpleNamespace(
-    node_coords=node_coords,
-    nodes=nodes,
-    triangles=triangles,
+    #msh = SimpleNamespace(
+    #node_coords=node_coords,
+    ##nodes=nodes,
+    #triangles=triangles,
 
-    element_material=element_material,
+    #element_material=element_material,
 
-    neighbors=neighbors,
-    faces=faces,
+    #neighbors=neighbors,
+    #faces=faces,
 
-    boundary_faces=boundary_faces,
-    interior_faces=interior_faces
-)
+    #boundary_faces=boundary_faces,
+    #interior_faces=interior_faces
+#)
