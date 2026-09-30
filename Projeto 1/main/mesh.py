@@ -153,3 +153,166 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
         faces=faces, boundary_faces=boundary_faces, interior_faces=interior_faces)
 
     return msh 
+
+def add_circle_geo(r, lc, center_tag=1):
+
+    # pontos cardeais
+    p1 = gmsh.model.geo.addPoint( r, 0, 0, lc)
+    p2 = gmsh.model.geo.addPoint( 0, r, 0, lc)
+    p3 = gmsh.model.geo.addPoint(-r, 0, 0, lc)
+    p4 = gmsh.model.geo.addPoint( 0,-r, 0, lc)
+
+    # quatro arcos
+    c1 = gmsh.model.geo.addCircleArc(
+        p1, center_tag, p2
+    )
+
+    c2 = gmsh.model.geo.addCircleArc(
+        p2, center_tag, p3
+    )
+
+    c3 = gmsh.model.geo.addCircleArc(
+        p3, center_tag, p4
+    )
+
+    c4 = gmsh.model.geo.addCircleArc(
+        p4, center_tag, p1
+    )
+
+    loop = gmsh.model.geo.addCurveLoop(
+        [c1, c2, c3, c4]
+    )
+
+    return loop, [c1, c2, c3, c4]
+
+def coax_mesh2D(
+    lc,
+    a=2e-3,
+    c=5e-3,
+    b=8e-3,
+    show_mesh=False
+):
+
+    gmsh.initialize()
+
+    gmsh.model.add("coaxial")
+
+    # -----------------------------------------
+    # Centro
+    # -----------------------------------------
+
+    center = gmsh.model.geo.addPoint(
+        0, 0, 0, lc
+    )
+
+    # -----------------------------------------
+    # Circunferências
+    # -----------------------------------------
+
+    loop_a, circle_a = add_circle_geo(
+        a, lc, center
+    )
+
+    loop_c, circle_c = add_circle_geo(
+        c, lc, center
+    )
+
+    loop_b, circle_b = add_circle_geo(
+        b, lc, center
+    )
+
+    # -----------------------------------------
+    # Superfícies
+    # -----------------------------------------
+
+    # ε1: a < r < c
+    region_1 = gmsh.model.geo.addPlaneSurface(
+        [loop_c, loop_a]
+    )
+
+    # ε2: c < r < b
+    region_2 = gmsh.model.geo.addPlaneSurface(
+        [loop_b, loop_c]
+    )
+
+    gmsh.model.geo.synchronize()
+
+        # -----------------------------------------
+    # Physical groups
+    # -----------------------------------------
+
+    dielectric_1 = gmsh.model.addPhysicalGroup(
+        2,
+        [region_1],
+        1
+    )
+
+    gmsh.model.setPhysicalName(
+        2,
+        dielectric_1,
+        "Dielectric1"
+    )
+
+    dielectric_2 = gmsh.model.addPhysicalGroup(
+        2,
+        [region_2],
+        2
+    )
+
+    gmsh.model.setPhysicalName(
+        2,
+        dielectric_2,
+        "Dielectric2"
+    )
+
+    inner_boundary = gmsh.model.addPhysicalGroup(
+        1,
+        circle_a,
+        10
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        inner_boundary,
+        "InnerConductor"
+    )
+
+    interface = gmsh.model.addPhysicalGroup(
+        1,
+        circle_c,
+        11
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        interface,
+        "DielectricInterface"
+    )
+
+    outer_boundary = gmsh.model.addPhysicalGroup(
+        1,
+        circle_b,
+        12
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        outer_boundary,
+        "OuterConductor"
+    )
+
+    
+
+    msh = SimpleNamespace(
+    node_coords=node_coords,
+    nodes=nodes,
+    triangles=triangles,
+
+    element_material=element_material,
+
+    neighbors=neighbors,
+    faces=faces,
+
+    boundary_faces=boundary_faces,
+    interior_faces=interior_faces
+)
