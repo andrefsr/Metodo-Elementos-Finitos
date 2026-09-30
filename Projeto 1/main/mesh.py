@@ -3,7 +3,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 from types import SimpleNamespace
 
-def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
+def get_local_faces(p):
+
+    if p == 1:
+
+        return [
+            (0, 1),
+            (1, 2),
+            (2, 0)
+        ]
+
+    elif p == 2:
+
+        return [
+            (0, 1, 3),
+            (1, 2, 4),
+            (2, 0, 5)
+        ]
+
+    else:
+
+        raise ValueError(
+            f"Faces locais ainda não implementadas para p={p}"
+        )
+
+def sqr_mesh2D(p,lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     ''' Malha quadrada - lc = 0.2 ## tamanho característico dos elementos (tamanho alvo) '''
 
     gmsh.initialize()
@@ -34,7 +58,14 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
     boundary = gmsh.model.addPhysicalGroup(1,[l1,l2,l3,l4])
     gmsh.model.setPhysicalName(1,boundary,'Boundary')
 
-    gmsh.model.mesh.generate(dim=2) #o argumento é a dimensão do espaço a ser gerado
+    gmsh.model.mesh.generate(2) #o argumento é a dimensão do espaço a ser gerado
+
+
+
+    gmsh.model.mesh.setOrder(p)
+
+
+
 
     ##extraindo nós
     node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
@@ -62,22 +93,56 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
             break
 
     ##construindo as faces
-    local_faces = [(0,1),(1,2),(2,0)]
+    #local_faces = [(0,1),(1,2),(2,0)]
+    local_faces = get_local_faces(p)
 
     ##dicionario: chave = face : valor = [elemento, face_local]
     face_dict = {}
 
+    #for elem_id, elem in enumerate(triangles):
+    #    for local_face_id, (i,j) in enumerate(local_faces):
+    #        n1 = elem[i]
+    #        n2 = elem[j]
+
+    #        face = tuple(sorted((n1,n2))) ##ordenar para identificar a mesma face independente da orientação
+
+    #       if face not in face_dict:
+    #           face_dict[face] = []
+
+    #        face_dict[face].append((elem_id,local_face_id))
+
+    local_faces = get_local_faces(p)
+
+    face_dict = {}
+
     for elem_id, elem in enumerate(triangles):
-        for local_face_id, (i,j) in enumerate(local_faces):
-            n1 = elem[i]
-            n2 = elem[j]
 
-            face = tuple(sorted((n1,n2))) ##ordenar para identificar a mesma face independente da orientação
+        for local_face_id, face_nodes in enumerate(local_faces):
 
-            if face not in face_dict:
-                face_dict[face] = []
+            # nós completos da face
+            face = tuple(
+                elem[i] for i in face_nodes
+            )
 
-            face_dict[face].append((elem_id,local_face_id))
+            # somente os vértices para identificar a aresta
+            key = tuple(
+                sorted([face[0], face[1]])
+            )
+
+            if key not in face_dict:
+
+                face_dict[key] = [
+                    elem_id,
+                    local_face_id,
+                    face
+                ]
+
+            else:
+
+                # encontramos o segundo elemento
+                face_dict[key].append(
+                    elem_id
+                )
 
     ##separando faces internas e de fronteira
     faces = []
@@ -114,6 +179,13 @@ def sqr_mesh2D(lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
 
     ##nós da fronteira
     boundary_nodes = np.unique(boundary_faces.flatten())
+
+    print("triangle =", triangles)
+    print("triangle.shape =", triangles.shape)
+
+    element_nodes = nodes[triangles]
+
+    print("element_nodes.shape =", element_nodes.shape)
 
     if show_mesh == True:
 
