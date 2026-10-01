@@ -3,388 +3,164 @@ import numpy as np
 import matplotlib.pyplot as plt
 from types import SimpleNamespace
 
-def get_local_faces(p):
 
-    if p == 1:
+def mesh_2D(lc=0.1,lim_inf=0.0,lim_sup=1.0,p=1,show_mesh=False):
 
-        return [
-            (0, 1),
-            (1, 2),
-            (2, 0)
-        ]
-
-    elif p == 2:
-
-        return [
-            (0, 1, 3),
-            (1, 2, 4),
-            (2, 0, 5)
-        ]
-
-    else:
-
-        raise ValueError(
-            f"Faces locais ainda não implementadas para p={p}"
-        )
-
-def sqr_mesh2D(p,lc:float, lim_inf:float, lim_sup:float,show_mesh:bool = False):
-    ''' Malha quadrada - lc = 0.2 ## tamanho característico dos elementos (tamanho alvo) '''
+    if p not in [1, 2, 3]:
+        raise ValueError("p deve ser 1, 2 ou 3.")
 
     gmsh.initialize()
-    gmsh.model.add('dominio')
-    
-    #pontos ## (x,y,z, tamanho do elemento)
-    p1 = gmsh.model.geo.addPoint(lim_inf,lim_inf,0,lc) 
-    p2 = gmsh.model.geo.addPoint(lim_sup,lim_inf,0,lc)
-    p3 = gmsh.model.geo.addPoint(lim_sup,lim_sup,0,lc)
-    p4 = gmsh.model.geo.addPoint(lim_inf,lim_sup,0,lc)
-
-    #linhas que ligam os pontos
-    l1 = gmsh.model.geo.addLine(p1,p2)
-    l2 = gmsh.model.geo.addLine(p2,p3)
-    l3 = gmsh.model.geo.addLine(p3,p4)
-    l4 = gmsh.model.geo.addLine(p4,p1)
-
-    #gerando a superficie
-    loop = gmsh.model.geo.addCurveLoop([l1,l2,l3,l4]) ##conectando todas as linhas
-    surface = gmsh.model.geo.addPlaneSurface([loop]) ##definindo a superfície interna definida pelo loop
-
-    gmsh.model.geo.synchronize() ##envia a geometria para o gmsh
-
-    ##grupos físicos (dominio e borda) --- atribui tags diferentes para cada grupo
-    domain = gmsh.model.add_physical_group(2,[surface]) ##dominio interno
-    gmsh.model.setPhysicalName(2,domain,'Domain')
-
-    boundary = gmsh.model.addPhysicalGroup(1,[l1,l2,l3,l4])
-    gmsh.model.setPhysicalName(1,boundary,'Boundary')
-
-    gmsh.model.mesh.generate(2) #o argumento é a dimensão do espaço a ser gerado
-
-
-
-    gmsh.model.mesh.setOrder(p)
-
-
-
-
-    ##extraindo nós
-    node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-    #print('Nós antes do reshape:') ## REMOVER 
-    #print(node_coords) ## REMOVER 
-    nodes_coords = np.array(node_coords).reshape(-1,3)
-
-    nodes = nodes_coords[:, :2] ##pegando somente a coordenada x e y
-
-    #print('Nós:') ## REMOVER 
-    #print(node_coords) ## REMOVER 
-    #print('Número de Nós:',len(nodes)) ## REMOVER 
-
-    ##mapa de tags do gmsh para indices do numpy
-    #traduzindo as tags para indices python (usando dicionário)
-    node_map = {tag: i for i,tag in enumerate(node_tags)}
-
-    #extraindo elementos (triangulos) 
-    element_types, element_tags, element_node_tags = gmsh.model.mesh.getElements(dim=2)
-    
-    triangles = None
-    for etype, tags, node_tags_element in zip(element_types,element_tags,element_node_tags):
-        if etype == 2: ##3 é o triângulo linear
-            triangles = np.array([node_map[tag] for tag in node_tags_element]).reshape(-1,3)
-            break
-
-    ##construindo as faces
-    #local_faces = [(0,1),(1,2),(2,0)]
-    local_faces = get_local_faces(p)
-
-    ##dicionario: chave = face : valor = [elemento, face_local]
-    face_dict = {}
-
-    #for elem_id, elem in enumerate(triangles):
-    #    for local_face_id, (i,j) in enumerate(local_faces):
-    #        n1 = elem[i]
-    #        n2 = elem[j]
-
-    #        face = tuple(sorted((n1,n2))) ##ordenar para identificar a mesma face independente da orientação
-
-    #       if face not in face_dict:
-    #           face_dict[face] = []
-
-    #        face_dict[face].append((elem_id,local_face_id))
-
-    local_faces = get_local_faces(p)
-
-    face_dict = {}
-
-    for elem_id, elem in enumerate(triangles):
-
-        for local_face_id, face_nodes in enumerate(local_faces):
-
-            # nós completos da face
-            face = tuple(
-                elem[i] for i in face_nodes
-            )
-
-            # somente os vértices para identificar a aresta
-            key = tuple(
-                sorted([face[0], face[1]])
-            )
-
-            if key not in face_dict:
-
-                face_dict[key] = [
-                    elem_id,
-                    local_face_id,
-                    face
-                ]
-
-            else:
-
-                # encontramos o segundo elemento
-                face_dict[key].append(
-                    elem_id
-                )
-
-    ##separando faces internas e de fronteira
-    faces = []
-    boundary_faces = []
-    interior_faces = []
-
-    for face, connected_elements in face_dict.items():
-        faces.append(face)
-
-        if len(connected_elements) == 1:
-            boundary_faces.append(face)
-
-        elif len(connected_elements) == 2:
-            interior_faces.append(face)
-
-    faces = np.array(faces)
-    boundary_faces = np.array(boundary_faces)
-    interior_faces = np.array(interior_faces)
-
-    ##identificando elementos vizinhos
-
-    #neighbors[e,f] onde e = elemento e f = face local
-    #se for -1: face de fronteira, do contrário é o índice do elemento vizinho
-
-    neighbors = -np.ones((len(triangles),3),dtype=int)
-
-    for face, connected_elements in face_dict.items():
-        if len(connected_elements) == 2:
-
-            (e1,f1), (e2,f2) = connected_elements
-
-            neighbors[e1,f1] = e2
-            neighbors[e2,f2] = e1
-
-    ##nós da fronteira
-    boundary_nodes = np.unique(boundary_faces.flatten())
-
-    print("triangle =", triangles)
-    print("triangle.shape =", triangles.shape)
-
-    element_nodes = nodes[triangles]
-
-    print("element_nodes.shape =", element_nodes.shape)
-
-    if show_mesh == True:
-
-        #print('\nNós:')
-        #print(node_coords)
-
-        #print('\nNúmero de Nós:',len(nodes))
-
-        #print('\nNúmero de elementos:',len(triangles))
-
-        #print('\nConectividade:')
-        #print(triangles)
-
-        #print("\nNúmero total de faces",len(faces))
-        #print("Faces de fronteira",len(boundary_faces))
-        #print('Faces internas',len(interior_faces))
-
-        #print('\nVizinhança:')
-        #print(neighbors)
-
-        #print('\nNós da fronteira:')
-        #print(boundary_faces)
-
-        plt.figure()
-        plt.grid(alpha=0.3)
-        plt.triplot(nodes[:,0],nodes[:,1],triangles)
-        plt.scatter(nodes[:,0],nodes[:,1],s=20,color='red')
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.axis('equal')
-        plt.show
-
-    gmsh.finalize
-    
-    msh = SimpleNamespace(
-        node_coords=node_coords, nodes=nodes, triangles=triangles, neighbors=neighbors,
-        faces=faces, boundary_faces=boundary_faces, interior_faces=interior_faces)
-
-    return msh 
-
-def add_circle_geo(r, lc, center_tag=1):
-
-    # pontos cardeais
-    p1 = gmsh.model.geo.addPoint( r, 0, 0, lc)
-    p2 = gmsh.model.geo.addPoint( 0, r, 0, lc)
-    p3 = gmsh.model.geo.addPoint(-r, 0, 0, lc)
-    p4 = gmsh.model.geo.addPoint( 0,-r, 0, lc)
-
-    # quatro arcos
-    c1 = gmsh.model.geo.addCircleArc(
-        p1, center_tag, p2
-    )
-
-    c2 = gmsh.model.geo.addCircleArc(
-        p2, center_tag, p3
-    )
-
-    c3 = gmsh.model.geo.addCircleArc(
-        p3, center_tag, p4
-    )
-
-    c4 = gmsh.model.geo.addCircleArc(
-        p4, center_tag, p1
-    )
-
-    loop = gmsh.model.geo.addCurveLoop(
-        [c1, c2, c3, c4]
-    )
-
-    return loop, [c1, c2, c3, c4]
-
-def coax_mesh2D(
-    lc,
-    a=2e-3,
-    c=5e-3,
-    b=8e-3,
-    show_mesh=False
-):
-
-    gmsh.initialize()
-
-    gmsh.model.add("coaxial")
-
-    # -----------------------------------------
-    # Centro
-    # -----------------------------------------
-
-    center = gmsh.model.geo.addPoint(
-        0, 0, 0, lc
-    )
-
-    # -----------------------------------------
-    # Circunferências
-    # -----------------------------------------
-
-    loop_a, circle_a = add_circle_geo(
-        a, lc, center
-    )
-
-    loop_c, circle_c = add_circle_geo(
-        c, lc, center
-    )
-
-    loop_b, circle_b = add_circle_geo(
-        b, lc, center
-    )
-
-    # -----------------------------------------
-    # Superfícies
-    # -----------------------------------------
-
-    # ε1: a < r < c
-    region_1 = gmsh.model.geo.addPlaneSurface(
-        [loop_c, loop_a]
-    )
-
-    # ε2: c < r < b
-    region_2 = gmsh.model.geo.addPlaneSurface(
-        [loop_b, loop_c]
-    )
+    gmsh.model.add("mesh_2D")
+
+    p1 = gmsh.model.geo.addPoint(lim_inf, lim_inf, 0, lc)
+    p2 = gmsh.model.geo.addPoint(lim_sup, lim_inf, 0, lc)
+    p3 = gmsh.model.geo.addPoint(lim_sup, lim_sup, 0, lc)
+    p4 = gmsh.model.geo.addPoint(lim_inf, lim_sup, 0, lc)
+
+    l1 = gmsh.model.geo.addLine(p1, p2)
+    l2 = gmsh.model.geo.addLine(p2, p3)
+    l3 = gmsh.model.geo.addLine(p3, p4)
+    l4 = gmsh.model.geo.addLine(p4, p1)
+
+    loop = gmsh.model.geo.addCurveLoop([l1, l2, l3, l4])
+    surface = gmsh.model.geo.addPlaneSurface([loop])
 
     gmsh.model.geo.synchronize()
 
-        # -----------------------------------------
-    # Physical groups
-    # -----------------------------------------
+    domain = gmsh.model.addPhysicalGroup(2,[surface],1)
 
-    dielectric_1 = gmsh.model.addPhysicalGroup(
-        2,
-        [region_1],
-        1
+    gmsh.model.setPhysicalName(2,domain,"Domain")
+
+    boundary = gmsh.model.addPhysicalGroup(1,[l1, l2, l3, l4],2)
+
+    gmsh.model.setPhysicalName(1,boundary,"Boundary")
+
+    gmsh.model.mesh.generate(2)
+
+    # transforma os elementos em P1, P2 ou P3
+    gmsh.model.mesh.setOrder(p)
+
+    node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
+
+    node_coords = np.asarray(node_coords,dtype=float).reshape(-1, 3)
+
+    # somente x,y
+    nodes = node_coords[:, :2]
+
+    # Mapeamento:
+    # tag do Gmsh -> índice do numpy
+    node_map = {int(tag): i for i, tag in enumerate(node_tags)}
+
+    # Tipos de elementos triangulares do Gmsh
+    triangle_type = {
+        1: 2,    # P1 -> 3 nós
+        2: 9,    # P2 -> 6 nós
+        3: 21    # P3 -> 10 nós
+    }
+
+    nodes_per_element = {
+        1: 3,
+        2: 6,
+        3: 10
+    }
+
+    expected_type = triangle_type[p]
+    npe = nodes_per_element[p]
+
+    element_types, element_tags, element_node_tags = gmsh.model.mesh.getElements(dim=2)
+
+    triangles = None
+
+    for etype, tags, conn in zip(
+        element_types,
+        element_tags,
+        element_node_tags
+    ):
+
+        if etype == expected_type:
+
+            conn = np.asarray(
+                conn,
+                dtype=int
+            ).reshape(-1, npe)
+
+            # converter tags do Gmsh para índices Python
+            triangles = np.array([
+                [
+                    node_map[int(tag)]
+                    for tag in element
+                ]
+                for element in conn
+            ])
+
+            break
+
+    if triangles is None:
+        gmsh.finalize()
+
+        raise RuntimeError(
+            f"Não foi encontrado elemento triangular P{p}."
+        )
+
+    # Tipos das arestas:
+    #
+    # P1 -> 2 nós
+    # P2 -> 3 nós
+    # P3 -> 4 nós
+
+    line_type = {
+        1: 1,    # linha P1
+        2: 8,    # linha P2
+        3: 26    # linha P3
+    }
+
+    expected_line_type = line_type[p]
+
+    boundary_element_types, boundary_tags, boundary_node_tags = gmsh.model.mesh.getElements(dim=1)
+
+    boundary_faces = []
+
+    for etype, tags, conn in zip(
+        boundary_element_types,
+        boundary_tags,
+        boundary_node_tags
+    ):
+
+        if etype == expected_line_type:
+
+            nface = p + 1
+
+            conn = np.asarray(
+                conn,
+                dtype=int
+            ).reshape(-1, nface)
+
+            for face in conn:
+
+                boundary_faces.append([
+                    node_map[int(tag)]
+                    for tag in face
+                ])
+
+    boundary_faces = np.asarray(boundary_faces,dtype=int)
+
+    if len(boundary_faces) > 0:
+        dirichlet_dofs = np.unique(boundary_faces.flatten())
+    else:
+        dirichlet_dofs = np.array([],dtype=int)
+
+    if show_mesh:
+        gmsh.fltk.run()
+
+    gmsh.finalize()
+
+    msh = SimpleNamespace(
+        nodes=nodes,
+        triangles=triangles,
+        boundary_faces=boundary_faces,
+        dirichlet_dofs=dirichlet_dofs,
+        p=p
     )
 
-    gmsh.model.setPhysicalName(
-        2,
-        dielectric_1,
-        "Dielectric1"
-    )
+    return msh
 
-    dielectric_2 = gmsh.model.addPhysicalGroup(
-        2,
-        [region_2],
-        2
-    )
-
-    gmsh.model.setPhysicalName(
-        2,
-        dielectric_2,
-        "Dielectric2"
-    )
-
-    inner_boundary = gmsh.model.addPhysicalGroup(
-        1,
-        circle_a,
-        10
-    )
-
-    gmsh.model.setPhysicalName(
-        1,
-        inner_boundary,
-        "InnerConductor"
-    )
-
-    interface = gmsh.model.addPhysicalGroup(
-        1,
-        circle_c,
-        11
-    )
-
-    gmsh.model.setPhysicalName(
-        1,
-        interface,
-        "DielectricInterface"
-    )
-
-    outer_boundary = gmsh.model.addPhysicalGroup(
-        1,
-        circle_b,
-        12
-    )
-
-    gmsh.model.setPhysicalName(
-        1,
-        outer_boundary,
-        "OuterConductor"
-    )
-
-    
-
-    #msh = SimpleNamespace(
-    #node_coords=node_coords,
-    ##nodes=nodes,
-    #triangles=triangles,
-
-    #element_material=element_material,
-
-    #neighbors=neighbors,
-    #faces=faces,
-
-    #boundary_faces=boundary_faces,
-    #interior_faces=interior_faces
-#)

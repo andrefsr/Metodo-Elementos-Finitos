@@ -39,7 +39,7 @@ def element_stiffness(nodes,p,k=1.0):
         J = jacobian(xi,eta,nodes,p)
         detJ = np.linalg.det(J)
 
-        dN_xy = dN @ np.linalg.inv(J).T
+        dN_xy = dN @ np.linalg.inv(J)
 
         B = dN_xy.T
 
