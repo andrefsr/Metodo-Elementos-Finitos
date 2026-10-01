@@ -23,9 +23,34 @@ def triangle_quadrature(p):
 
     return points, weights
 
-def element_stiffness(nodes,p,k=1.0):
+#def element_stiffness(nodes,p,k=1.0):
+#    n = len(nodes)
+#    Ke = np.zeros((n,n))
+#
+#    points, weights = triangle_quadrature(p)
+#
+#    for q in range(len(weights)):
+#
+#        xi, eta = points[q]
+#        w = weights[q]
+#
+#        _, dN = shape_functions(xi,eta,p)
+#
+#        J = jacobian(xi,eta,nodes,p)
+#        detJ = np.linalg.det(J)
+#
+#        dN_xy = dN @ np.linalg.inv(J)
+#
+#        B = dN_xy.T
+#
+#        Ke += k* (B.T @ B) * abs(detJ) * w ##integração
+#
+#    return Ke
+
+#def element_stiffness(nodes,p,eps_r,quadrature_order):
+def element_stiffness(nodes,p,k=1,eps_r=1):
     n = len(nodes)
-    Ke = np.zeros((n,n))
+    Ke = np.zeros((n, n))
 
     points, weights = triangle_quadrature(p)
 
@@ -37,13 +62,13 @@ def element_stiffness(nodes,p,k=1.0):
         _, dN = shape_functions(xi,eta,p)
 
         J = jacobian(xi,eta,nodes,p)
-        detJ = np.linalg.det(J)
+        detJ = abs(np.linalg.det(J))
 
-        dN_xy = dN @ np.linalg.inv(J)
+        dN_xy = (dN @ np.linalg.inv(J))
 
         B = dN_xy.T
 
-        Ke += k* (B.T @ B) * abs(detJ) * w ##integração
+        Ke += k * (eps_r * B.T @ B * detJ * w)
 
     return Ke
 

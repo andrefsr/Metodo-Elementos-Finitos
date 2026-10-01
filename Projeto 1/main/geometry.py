@@ -20,9 +20,7 @@ def jacobian(xi, eta, nodes, p):
     dy_dxi = np.sum(dN[:, 0] * nodes[:, 1])
     dy_deta = np.sum(dN[:, 1] * nodes[:, 1])
 
-    J = np.array([
-        [dx_dxi,  dx_deta],
-        [dy_dxi,  dy_deta]
-    ])
+    J = np.array([[dx_dxi,  dx_deta],
+                  [dy_dxi,  dy_deta]])
 
     return J

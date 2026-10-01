@@ -164,3 +164,388 @@ def mesh_2D(lc=0.1,lim_inf=0.0,lim_sup=1.0,p=1,show_mesh=False):
 
     return msh
 
+import gmsh
+import numpy as np
+from types import SimpleNamespace
+
+
+def coax_mesh2D(
+    lc=1e-3,
+    a=2e-3,
+    c=5e-3,
+    b=8e-3,
+    p=1,
+    show_mesh=False
+):
+
+    if p not in [1, 2, 3]:
+        raise ValueError("p deve ser 1, 2 ou 3.")
+
+    gmsh.initialize()
+    gmsh.model.add("coaxial")
+
+    # ==========================================================
+    # CENTRO
+    # ==========================================================
+
+    center = gmsh.model.geo.addPoint(
+        0.0, 0.0, 0.0, lc
+    )
+
+    # ==========================================================
+    # FUNÇÃO PARA CRIAR CIRCUNFERÊNCIA
+    # ==========================================================
+
+    def add_circle(r):
+
+        p1 = gmsh.model.geo.addPoint(
+            r, 0, 0, lc
+        )
+
+        p2 = gmsh.model.geo.addPoint(
+            0, r, 0, lc
+        )
+
+        p3 = gmsh.model.geo.addPoint(
+            -r, 0, 0, lc
+        )
+
+        p4 = gmsh.model.geo.addPoint(
+            0, -r, 0, lc
+        )
+
+        c1 = gmsh.model.geo.addCircleArc(
+            p1, center, p2
+        )
+
+        c2 = gmsh.model.geo.addCircleArc(
+            p2, center, p3
+        )
+
+        c3 = gmsh.model.geo.addCircleArc(
+            p3, center, p4
+        )
+
+        c4 = gmsh.model.geo.addCircleArc(
+            p4, center, p1
+        )
+
+        # sentido anti-horário
+        loop_ccw = gmsh.model.geo.addCurveLoop([
+            c1, c2, c3, c4
+        ])
+
+        # mesmo contorno, sentido horário
+        loop_cw = gmsh.model.geo.addCurveLoop([
+            -c1, -c4, -c3, -c2
+        ])
+
+        return loop_ccw, loop_cw, [c1, c2, c3, c4]
+
+    # ==========================================================
+    # CIRCUNFERÊNCIAS
+    # ==========================================================
+
+    loop_a_ccw, loop_a_cw, circle_a = add_circle(a)
+
+    loop_c_ccw, loop_c_cw, circle_c = add_circle(c)
+
+    loop_b_ccw, loop_b_cw, circle_b = add_circle(b)
+
+    # ==========================================================
+    # SUPERFÍCIES
+    # ==========================================================
+
+    # Região ε1: a < r < c
+    region_1 = gmsh.model.geo.addPlaneSurface([
+        loop_c_ccw,
+        loop_a_cw
+    ])
+
+    # Região ε2: c < r < b
+    region_2 = gmsh.model.geo.addPlaneSurface([
+        loop_b_ccw,
+        loop_c_cw
+    ])
+
+    gmsh.model.geo.synchronize()
+
+    # ==========================================================
+    # PHYSICAL GROUPS
+    # ==========================================================
+
+    phys_region_1 = gmsh.model.addPhysicalGroup(
+        2,
+        [region_1],
+        1
+    )
+
+    gmsh.model.setPhysicalName(
+        2,
+        phys_region_1,
+        "Dielectric_1"
+    )
+
+    phys_region_2 = gmsh.model.addPhysicalGroup(
+        2,
+        [region_2],
+        2
+    )
+
+    gmsh.model.setPhysicalName(
+        2,
+        phys_region_2,
+        "Dielectric_2"
+    )
+
+    # Condutor interno
+    inner_boundary = gmsh.model.addPhysicalGroup(
+        1,
+        circle_a,
+        10
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        inner_boundary,
+        "InnerConductor"
+    )
+
+    # Interface
+    interface = gmsh.model.addPhysicalGroup(
+        1,
+        circle_c,
+        11
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        interface,
+        "Interface"
+    )
+
+    # Condutor externo
+    outer_boundary = gmsh.model.addPhysicalGroup(
+        1,
+        circle_b,
+        12
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        outer_boundary,
+        "OuterConductor"
+    )
+
+    # ==========================================================
+    # MALHA
+    # ==========================================================
+
+    gmsh.model.mesh.generate(2)
+
+    gmsh.model.mesh.setOrder(p)
+
+    # ==========================================================
+    # NÓS
+    # ==========================================================
+
+    node_tags, node_coords, _ = \
+        gmsh.model.mesh.getNodes()
+
+    node_coords = np.asarray(
+        node_coords,
+        dtype=float
+    ).reshape(-1, 3)
+
+    nodes = node_coords[:, :2]
+
+    node_map = {
+        int(tag): i
+        for i, tag in enumerate(node_tags)
+    }
+
+    # ==========================================================
+    # TIPOS DE ELEMENTOS
+    # ==========================================================
+
+    triangle_type = {
+        1: 2,    # 3 nós
+        2: 9,    # 6 nós
+        3: 21    # 10 nós
+    }
+
+    nodes_per_element = {
+        1: 3,
+        2: 6,
+        3: 10
+    }
+
+    expected_type = triangle_type[p]
+    npe = nodes_per_element[p]
+
+    # ==========================================================
+    # ELEMENTOS
+    # ==========================================================
+
+    triangles = []
+    element_material = []
+
+    for surface, material_id in [
+        (region_1, 1),
+        (region_2, 2)
+    ]:
+
+        element_types, _, element_node_tags = \
+            gmsh.model.mesh.getElements(
+                dim=2,
+                tag=surface
+            )
+
+        for etype, conn in zip(
+            element_types,
+            element_node_tags
+        ):
+
+            if etype != expected_type:
+                continue
+
+            conn = np.asarray(
+                conn,
+                dtype=int
+            ).reshape(-1, npe)
+
+            for element in conn:
+
+                triangles.append([
+                    node_map[int(tag)]
+                    for tag in element
+                ])
+
+                element_material.append(
+                    material_id
+                )
+
+    triangles = np.asarray(
+        triangles,
+        dtype=int
+    )
+
+    element_material = np.asarray(
+        element_material,
+        dtype=int
+    )
+
+    # ==========================================================
+    # FACES DE FRONTEIRA
+    # ==========================================================
+
+    line_type = {
+        1: 1,
+        2: 8,
+        3: 26
+    }
+
+    expected_line_type = line_type[p]
+    nface = p + 1
+
+    def get_boundary_faces(curves):
+
+        faces = []
+
+        for curve in curves:
+
+            element_types, _, node_data = \
+                gmsh.model.mesh.getElements(
+                    dim=1,
+                    tag=curve
+                )
+
+            for etype, conn in zip(
+                element_types,
+                node_data
+            ):
+
+                if etype != expected_line_type:
+                    continue
+
+                conn = np.asarray(
+                    conn,
+                    dtype=int
+                ).reshape(-1, nface)
+
+                for face in conn:
+
+                    faces.append([
+                        node_map[int(tag)]
+                        for tag in face
+                    ])
+
+        return np.asarray(
+            faces,
+            dtype=int
+        )
+
+    inner_faces = get_boundary_faces(
+        circle_a
+    )
+
+    interface_faces = get_boundary_faces(
+        circle_c
+    )
+
+    outer_faces = get_boundary_faces(
+        circle_b
+    )
+
+    # ==========================================================
+    # DOFs DE DIRICHLET
+    # ==========================================================
+
+    inner_dofs = np.unique(
+        inner_faces.flatten()
+    )
+
+    outer_dofs = np.unique(
+        outer_faces.flatten()
+    )
+
+    dirichlet_dofs = np.concatenate([
+        inner_dofs,
+        outer_dofs
+    ])
+
+    dirichlet_values = np.concatenate([
+        np.zeros(len(inner_dofs)),
+        np.ones(len(outer_dofs))
+    ])
+
+    # ==========================================================
+    # VISUALIZAÇÃO
+    # ==========================================================
+
+    if show_mesh:
+        gmsh.fltk.run()
+
+    gmsh.finalize()
+
+    # ==========================================================
+    # RETORNO
+    # ==========================================================
+
+    msh = SimpleNamespace(
+        nodes=nodes,
+        triangles=triangles,
+
+        element_material=element_material,
+
+        inner_faces=inner_faces,
+        interface_faces=interface_faces,
+        outer_faces=outer_faces,
+
+        dirichlet_dofs=dirichlet_dofs,
+        dirichlet_values=dirichlet_values,
+
+        p=p
+    )
+
+    return msh
