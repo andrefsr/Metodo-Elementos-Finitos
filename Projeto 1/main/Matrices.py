@@ -2,26 +2,68 @@ import numpy as np
 from main.shape_functions import shape_functions
 from main.geometry import jacobian, xi_eta_to_xy
 
-def triangle_quadrature(p):
+#def triangle_quadrature(p):
+#
+#    if p == 1:
+#        points = np.array([[1/3, 1/3]])
+#        weights = np.array([1/2])
 
-    if p == 1:
-        points = np.array([[1/3, 1/3]])
-        weights = np.array([1/2])
+#    elif p == 2:
+#        points = np.array([[1/6, 1/6], [2/3, 1/6], [1/6, 2/3]])
+#        weights = np.array([1/6, 1/6, 1/6])
 
-    elif p == 2:
-        points = np.array([[1/6, 1/6], [2/3, 1/6], [1/6, 2/3]])
-        weights = np.array([1/6, 1/6, 1/6])
+#    elif p == 3:
+#        points = np.array([ [0.445948490915965, 0.108103018168070], [0.108103018168070, 0.445948490915965],
+#                            [0.445948490915965, 0.445948490915965], [0.091576213509771, 0.816847572980459],
+#                            [0.816847572980459, 0.091576213509771], [0.091576213509771, 0.091576213509771]])
+#        weights = np.array([0.111690794839005, 0.111690794839005, 0.111690794839005, 0.054975871827661, 0.054975871827661, 0.054975871827661])
 
-    elif p == 3:
-        points = np.array([ [0.445948490915965, 0.108103018168070], [0.108103018168070, 0.445948490915965],
-                            [0.445948490915965, 0.445948490915965], [0.091576213509771, 0.816847572980459],
-                            [0.816847572980459, 0.091576213509771], [0.091576213509771, 0.091576213509771]])
-        weights = np.array([0.111690794839005, 0.111690794839005, 0.111690794839005, 0.054975871827661, 0.054975871827661, 0.054975871827661])
+#    else:
+#        raise ValueError("Quadratura implementada apenas para p = 1, 2 e 3.")
 
-    else:
-        raise ValueError("Quadratura implementada apenas para p = 1, 2 e 3.")
+#    return points, weights
 
-    return points, weights
+def triangle_quadrature(nq=8):
+
+    # Gauss-Legendre em [−1,1]
+    x, w = np.polynomial.legendre.leggauss(nq)
+
+    # transforma para [0,1]
+    s = 0.5 * (x + 1.0)
+    ws = 0.5 * w
+
+    points = []
+    weights = []
+
+    for i in range(nq):
+
+        for j in range(nq):
+
+            si = s[i]
+            tj = s[j]
+
+            # Transformação de Duffy
+            xi = si
+            eta = (1.0 - si) * tj
+
+            # Jacobiano da transformação
+            weight = (
+                ws[i]
+                * ws[j]
+                * (1.0 - si)
+            )
+
+            points.append([
+                xi,
+                eta
+            ])
+
+            weights.append(weight)
+
+    return (
+        np.array(points),
+        np.array(weights)
+    )
 
 #def element_stiffness(nodes,p,k=1.0):
 #    n = len(nodes)
@@ -52,7 +94,7 @@ def element_stiffness(nodes,p,k=1,eps_r=1):
     n = len(nodes)
     Ke = np.zeros((n, n))
 
-    points, weights = triangle_quadrature(p)
+    points, weights = triangle_quadrature(8)
 
     for q in range(len(weights)):
 
@@ -76,7 +118,7 @@ def element_load(nodes, p, f):
     n = len(nodes)
     Fe = np.zeros(n)
 
-    points, weights = triangle_quadrature(p)
+    points, weights = triangle_quadrature(8)
 
     for q in range(len(weights)):
         xi, eta = points[q]

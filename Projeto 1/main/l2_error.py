@@ -4,14 +4,18 @@ from main.shape_functions import shape_functions
 from main.Matrices import jacobian
 from main.geometry import xi_eta_to_xy
 
+
+
 def exact_coaxial(x, y):
 
     a = 2e-3
     c = 5e-3
     b = 8e-3
-
     er1 = 2.0
     er2 = 4.0
+
+    x = np.asarray(x)
+    y = np.asarray(y)
 
     r = np.sqrt(x**2 + y**2)
 
@@ -21,25 +25,26 @@ def exact_coaxial(x, y):
         np.log(b/c)/er2
     )
 
-    if a <= r <= c:
+    u = np.zeros_like(r, dtype=float)
 
-        return (
-            np.log(r/a)/er1
-        ) / denominator
+    mask1 = (r >= a) & (r <= c)
+    mask2 = (r > c) & (r <= b)
 
-    elif c < r <= b:
+    u[mask1] = (
+        np.log(r[mask1]/a)/er1
+    ) / denominator
 
-        return (
-            np.log(c/a)/er1
-            +
-            np.log(r/c)/er2
-        ) / denominator
+    u[mask2] = (
+        np.log(c/a)/er1
+        +
+        np.log(r[mask2]/c)/er2
+    ) / denominator
 
-    else:
+    # Se a entrada for escalar, retorna escalar
+    if u.ndim == 0:
+        return float(u)
 
-        raise ValueError(
-            f"Ponto fora do domínio: r = {r}"
-        )
+    return u
 
 def l2_error(malha, u, p):
     error_squared = 0.0
@@ -81,9 +86,9 @@ def l2_error_coaxi(mesh, u, p, exact_solution):
     error_squared = 0.0
 
     # Pontos e pesos da quadratura
-    quadrature = triangle_quadrature(p)
+    points, weights = triangle_quadrature(8)
 
-    # Percorre todos os elementos
+    # Percorre os elementos
     for element in mesh.triangles:
 
         # Coordenadas dos nós do elemento
@@ -92,13 +97,13 @@ def l2_error_coaxi(mesh, u, p, exact_solution):
         # Valores de u nos nós do elemento
         element_u = u[element]
 
-        # Integração no elemento de referência
-        for xi, eta, w in quadrature:
+        # Integração
+        for (xi, eta), w in zip(points, weights):
 
             # Funções de forma
-            N = shape_functions(xi, eta, p)
+            N, _ = shape_functions(xi, eta, p)
 
-            # Coordenadas físicas do ponto de quadratura
+            # Coordenadas físicas
             xq, yq = xi_eta_to_xy(
                 xi,
                 eta,
@@ -106,10 +111,10 @@ def l2_error_coaxi(mesh, u, p, exact_solution):
                 p
             )
 
-            # Solução numérica no ponto
+            # Solução numérica
             uh = N @ element_u
 
-            # Solução exata no ponto
+            # Solução exata
             uex = exact_solution(xq, yq)
 
             # Jacobiano
@@ -122,7 +127,7 @@ def l2_error_coaxi(mesh, u, p, exact_solution):
 
             detJ = abs(np.linalg.det(J))
 
-            # Contribuição para a norma L2 ao quadrado
+            # Erro
             error_squared += (
                 (uex - uh)**2
                 * detJ
