@@ -168,6 +168,96 @@ import gmsh
 import numpy as np
 from types import SimpleNamespace
 
+def remove_unused_nodes(
+    nodes,
+    triangles,
+    inner_faces=None,
+    interface_faces=None,
+    outer_faces=None,
+    dirichlet_dofs=None,
+    dirichlet_values=None
+):
+
+    # ==========================================================
+    # 1. Nós que realmente pertencem aos elementos
+    # ==========================================================
+
+    used_nodes = np.unique(triangles.flatten())
+
+    # Novas coordenadas
+    new_nodes = nodes[used_nodes]
+
+    # ==========================================================
+    # 2. Mapeamento índice antigo -> índice novo
+    # ==========================================================
+
+    old_to_new = {
+        old: new
+        for new, old in enumerate(used_nodes)
+    }
+
+    # ==========================================================
+    # 3. Remapeia os elementos
+    # ==========================================================
+
+    new_triangles = np.array([
+        [old_to_new[node] for node in element]
+        for element in triangles
+    ], dtype=int)
+
+    # ==========================================================
+    # 4. Função auxiliar para remapear faces
+    # ==========================================================
+
+    def remap_faces(faces):
+
+        if faces is None:
+            return None
+
+        return np.array([
+            [old_to_new[node] for node in face]
+            for face in faces
+        ], dtype=int)
+
+    # ==========================================================
+    # 5. Remapeia as faces
+    # ==========================================================
+
+    new_inner_faces = remap_faces(inner_faces)
+
+    new_interface_faces = remap_faces(interface_faces)
+
+    new_outer_faces = remap_faces(outer_faces)
+
+    # ==========================================================
+    # 6. Remapeia os graus de liberdade de Dirichlet
+    # ==========================================================
+
+    if dirichlet_dofs is not None:
+
+        new_dirichlet_dofs = np.array([
+            old_to_new[node]
+            for node in dirichlet_dofs
+        ], dtype=int)
+
+    else:
+        new_dirichlet_dofs = None
+
+    # ==========================================================
+    # 7. Valores de Dirichlet não precisam ser alterados
+    # ==========================================================
+
+    new_dirichlet_values = dirichlet_values
+
+    return (
+        new_nodes,
+        new_triangles,
+        new_inner_faces,
+        new_interface_faces,
+        new_outer_faces,
+        new_dirichlet_dofs,
+        new_dirichlet_values
+    )
 
 def coax_mesh2D(
     lc=1e-3,
@@ -196,50 +286,33 @@ def coax_mesh2D(
     # FUNÇÃO PARA CRIAR CIRCUNFERÊNCIA
     # ==========================================================
 
+    #def add_circle(r):
+    #    p1 = gmsh.model.geo.addPoint(r, 0, 0, lc)
+    #    p2 = gmsh.model.geo.addPoint(0, r, 0, lc)
+    #    p3 = gmsh.model.geo.addPoint(-r, 0, 0, lc)
+    #    p4 = gmsh.model.geo.addPoint(0, -r, 0, lc)
+    #    c1 = gmsh.model.geo.addCircleArc(p1, center, p2)
+    #    c2 = gmsh.model.geo.addCircleArc(p2, center, p3)
+    #    c3 = gmsh.model.geo.addCircleArc(p3, center, p4)
+    #    c4 = gmsh.model.geo.addCircleArc(p4, center, p1)
+    #    # sentido anti-horário
+    #    loop_ccw = gmsh.model.geo.addCurveLoop([c1, c2, c3, c4])
+    #    # mesmo contorno, sentido horário
+    #    loop_cw = gmsh.model.geo.addCurveLoop([-c1, -c4, -c3, -c2])
+    #    return loop_ccw, loop_cw, [c1, c2, c3, c4]
+
+        
     def add_circle(r):
-
-        p1 = gmsh.model.geo.addPoint(
-            r, 0, 0, lc
-        )
-
-        p2 = gmsh.model.geo.addPoint(
-            0, r, 0, lc
-        )
-
-        p3 = gmsh.model.geo.addPoint(
-            -r, 0, 0, lc
-        )
-
-        p4 = gmsh.model.geo.addPoint(
-            0, -r, 0, lc
-        )
-
-        c1 = gmsh.model.geo.addCircleArc(
-            p1, center, p2
-        )
-
-        c2 = gmsh.model.geo.addCircleArc(
-            p2, center, p3
-        )
-
-        c3 = gmsh.model.geo.addCircleArc(
-            p3, center, p4
-        )
-
-        c4 = gmsh.model.geo.addCircleArc(
-            p4, center, p1
-        )
-
-        # sentido anti-horário
-        loop_ccw = gmsh.model.geo.addCurveLoop([
-            c1, c2, c3, c4
-        ])
-
-        # mesmo contorno, sentido horário
-        loop_cw = gmsh.model.geo.addCurveLoop([
-            -c1, -c4, -c3, -c2
-        ])
-
+        p1 = gmsh.model.geo.addPoint(r, 0, 0, lc)
+        p2 = gmsh.model.geo.addPoint(0, r, 0, lc)
+        p3 = gmsh.model.geo.addPoint(-r, 0, 0, lc)
+        p4 = gmsh.model.geo.addPoint(0, -r, 0, lc)
+        c1 = gmsh.model.geo.addCircleArc(p1, center, p2)
+        c2 = gmsh.model.geo.addCircleArc(p2, center, p3)
+        c3 = gmsh.model.geo.addCircleArc(p3, center, p4)
+        c4 = gmsh.model.geo.addCircleArc(p4, center, p1)
+        loop_ccw = gmsh.model.geo.addCurveLoop([c1, c2, c3, c4])
+        loop_cw = gmsh.model.geo.addCurveLoop([-c1, -c2, -c3, -c4])
         return loop_ccw, loop_cw, [c1, c2, c3, c4]
 
     # ==========================================================
@@ -531,6 +604,24 @@ def coax_mesh2D(
     # ==========================================================
     # RETORNO
     # ==========================================================
+
+    (
+    nodes,
+    triangles,
+    inner_faces,
+    interface_faces,
+    outer_faces,
+    dirichlet_dofs,
+    dirichlet_values
+) = remove_unused_nodes(
+    nodes,
+    triangles,
+    inner_faces,
+    interface_faces,
+    outer_faces,
+    dirichlet_dofs,
+    dirichlet_values
+)
 
     msh = SimpleNamespace(
         nodes=nodes,

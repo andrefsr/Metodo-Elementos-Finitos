@@ -24,3 +24,4 @@ def jacobian(xi, eta, nodes, p):
                   [dy_dxi,  dy_deta]])
 
     return J
+
