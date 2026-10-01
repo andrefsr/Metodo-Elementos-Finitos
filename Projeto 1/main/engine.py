@@ -46,3 +46,27 @@ def assemble_coax_system(nodes,triangles,element_material,p):
                 K[I, J] += Ke[i, j]
 
     return K, F
+
+def exact_solution_coax(x, y):
+
+    a = 2e-3
+    c = 5e-3
+    b = 8e-3
+
+    er1 = 2.0
+    er2 = 4.0
+
+    r = np.sqrt(x**2 + y**2)
+    S = (np.log(c/a) /er1+ np.log(b/c)/er2)
+    print(S)
+
+
+    u = np.zeros_like(r)
+
+    mask1 = r <= c
+    mask2 = r > c
+
+    u[mask1] = (np.log(r[mask1]/a)/ S)
+    u[mask2] = (np.log(c/a)/er1+np.log(r[mask2]/c)/er2) / S
+
+    return u
