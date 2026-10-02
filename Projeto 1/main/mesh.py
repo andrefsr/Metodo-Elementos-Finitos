@@ -640,3 +640,312 @@ def coax_mesh2D(
     )
 
     return msh
+
+def remove_unused_nodes_L(
+    nodes,
+    triangles,
+    boundary_faces
+):
+
+    used_nodes = np.unique(
+        triangles.flatten()
+    )
+
+    new_nodes = nodes[used_nodes]
+
+    old_to_new = {
+        old: new
+        for new, old in enumerate(used_nodes)
+    }
+
+    new_triangles = np.array([
+        [
+            old_to_new[i]
+            for i in element
+        ]
+        for element in triangles
+    ], dtype=int)
+
+    new_boundary_faces = np.array([
+        [
+            old_to_new[i]
+            for i in face
+        ]
+        for face in boundary_faces
+    ], dtype=int)
+
+    return (
+        new_nodes,
+        new_triangles,
+        new_boundary_faces
+    )
+
+def L_mesh2D(
+    lc=0.1,
+    p=1,
+    show_mesh=False
+):
+
+    if p not in [1, 2, 3]:
+        raise ValueError("p deve ser 1, 2 ou 3.")
+
+    gmsh.initialize()
+    gmsh.model.add("L_domain")
+
+    # ==========================================================
+    # Pontos
+    # ==========================================================
+
+    p1 = gmsh.model.geo.addPoint(
+        -1.0, -1.0, 0.0, lc
+    )
+
+    p2 = gmsh.model.geo.addPoint(
+         1.0, -1.0, 0.0, lc
+    )
+
+    p3 = gmsh.model.geo.addPoint(
+         1.0,  1.0, 0.0, lc
+    )
+
+    p4 = gmsh.model.geo.addPoint(
+        -1.0,  1.0, 0.0, lc
+    )
+
+    p5 = gmsh.model.geo.addPoint(
+        -1.0,  0.0, 0.0, lc
+    )
+
+    p6 = gmsh.model.geo.addPoint(
+         0.0,  0.0, 0.0, lc
+    )
+
+    p7 = gmsh.model.geo.addPoint(
+         0.0, -1.0, 0.0, lc
+    )
+
+    # ==========================================================
+    # Contorno:
+    #
+    # (-1,-1) -> (1,-1) -> (1,1)
+    # -> (-1,1) -> (-1,0) -> (0,0)
+    # -> (0,-1) -> (-1,-1)
+    # ==========================================================
+
+    l1 = gmsh.model.geo.addLine(p1, p2)
+    l2 = gmsh.model.geo.addLine(p2, p3)
+    l3 = gmsh.model.geo.addLine(p3, p4)
+    l4 = gmsh.model.geo.addLine(p4, p5)
+    l5 = gmsh.model.geo.addLine(p5, p6)
+    l6 = gmsh.model.geo.addLine(p6, p7)
+    l7 = gmsh.model.geo.addLine(p7, p1)
+
+    loop = gmsh.model.geo.addCurveLoop([
+        l1, l2, l3, l4, l5, l6, l7
+    ])
+
+    surface = gmsh.model.geo.addPlaneSurface(
+        [loop]
+    )
+
+    gmsh.model.geo.synchronize()
+
+    # ==========================================================
+    # Physical groups
+    # ==========================================================
+
+    domain = gmsh.model.addPhysicalGroup(
+        2,
+        [surface],
+        1
+    )
+
+    gmsh.model.setPhysicalName(
+        2,
+        domain,
+        "Domain"
+    )
+
+    boundary = gmsh.model.addPhysicalGroup(
+        1,
+        [l1, l2, l3, l4, l5, l6, l7],
+        2
+    )
+
+    gmsh.model.setPhysicalName(
+        1,
+        boundary,
+        "Boundary"
+    )
+
+    # ==========================================================
+    # Malha
+    # ==========================================================
+
+    gmsh.model.mesh.generate(2)
+
+    # ordem P1/P2/P3
+    gmsh.model.mesh.setOrder(p)
+
+    # ==========================================================
+    # Nós
+    # ==========================================================
+
+    node_tags, node_coords, _ = \
+        gmsh.model.mesh.getNodes()
+
+    node_coords = np.asarray(
+        node_coords,
+        dtype=float
+    ).reshape(-1, 3)
+
+    nodes = node_coords[:, :2]
+
+    node_map = {
+        int(tag): i
+        for i, tag in enumerate(node_tags)
+    }
+
+    # ==========================================================
+    # Elementos triangulares
+    # ==========================================================
+
+    triangle_type = {
+        1: 2,    # 3 nós
+        2: 9,    # 6 nós
+        3: 21    # 10 nós
+    }
+
+    nodes_per_element = {
+        1: 3,
+        2: 6,
+        3: 10
+    }
+
+    expected_type = triangle_type[p]
+    npe = nodes_per_element[p]
+
+    element_types, element_tags, element_node_tags = \
+        gmsh.model.mesh.getElements(dim=2)
+
+    triangles = None
+
+    for etype, tags, conn in zip(
+        element_types,
+        element_tags,
+        element_node_tags
+    ):
+
+        if etype == expected_type:
+
+            conn = np.asarray(
+                conn,
+                dtype=int
+            ).reshape(-1, npe)
+
+            triangles = np.array([
+                [
+                    node_map[int(tag)]
+                    for tag in element
+                ]
+                for element in conn
+            ], dtype=int)
+
+            break
+
+    if triangles is None:
+        gmsh.finalize()
+
+        raise RuntimeError(
+            f"Triângulos P{p} não encontrados."
+        )
+
+    # ==========================================================
+    # Faces de contorno
+    # ==========================================================
+
+    line_type = {
+        1: 1,    # 2 nós
+        2: 8,    # 3 nós
+        3: 26    # 4 nós
+    }
+
+    expected_line_type = line_type[p]
+
+    nface = p + 1
+
+    boundary_faces = []
+
+    boundary_element_types, _, boundary_node_tags = \
+        gmsh.model.mesh.getElements(dim=1)
+
+    for etype, conn in zip(
+        boundary_element_types,
+        boundary_node_tags
+    ):
+
+        if etype != expected_line_type:
+            continue
+
+        conn = np.asarray(
+            conn,
+            dtype=int
+        ).reshape(-1, nface)
+
+        for face in conn:
+
+            boundary_faces.append([
+                node_map[int(tag)]
+                for tag in face
+            ])
+
+    boundary_faces = np.asarray(
+        boundary_faces,
+        dtype=int
+    )
+
+    # ==========================================================
+    # Remover nós que eventualmente não pertençam aos elementos
+    # ==========================================================
+
+    (
+        nodes,
+        triangles,
+        boundary_faces
+    ) = remove_unused_nodes_L(
+        nodes,
+        triangles,
+        boundary_faces
+    )
+
+    # ==========================================================
+    # Todos os nós de fronteira são Dirichlet
+    # Os valores serão calculados depois
+    # ==========================================================
+
+    dirichlet_dofs = np.unique(
+        boundary_faces.flatten()
+    )
+
+    # ==========================================================
+    # Visualização
+    # ==========================================================
+
+    if show_mesh:
+        gmsh.fltk.run()
+
+    gmsh.finalize()
+
+    # ==========================================================
+    # Estrutura final
+    # ==========================================================
+
+    msh = SimpleNamespace(
+        nodes=nodes,
+        triangles=triangles,
+        boundary_faces=boundary_faces,
+        dirichlet_dofs=dirichlet_dofs,
+        p=p
+    )
+
+    return msh
