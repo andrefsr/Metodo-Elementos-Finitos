@@ -1,30 +1,14 @@
-"""
-Método dos Elementos Finitos com elementos triangulares de Lagrange P1, P2 e P3
-Problema: Laplace (sem cargas) no domínio em L, com solução exata
-        V = R^(2/3) * sin(2*theta/3 + pi/3),   -pi/2 <= theta <= pi
 
- - Condições de Dirichlet impostas por ELIMINAÇÃO das equações dos nós de Dirichlet
-   (o sistema global só contém os graus de liberdade livres).
- - Malhas triangulares geradas pelo Gmsh (import gmsh dentro do Python).
- - Estudo de convergência: erros em L2 e na norma de energia vs h (log-log).
-
-Dependências: numpy, scipy, matplotlib, gmsh   (pip install gmsh)
-"""
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 import gmsh
 
-
-# ----------------------------------------------------------------------------
-# Solução exata e condição de contorno (função fornecida pelo usuário)
-# ----------------------------------------------------------------------------
 def u_exact(x, y):
     R = np.hypot(x, y)
     th = np.arctan2(y, x)          # para o L: -pi/2 <= theta <= pi
     return R ** (2.0 / 3.0) * np.sin(2.0 * th / 3.0 + np.pi / 3.0)
-
 
 def grad_u_exact(x, y):
     R = np.maximum(np.hypot(x, y), 1e-14)
@@ -33,15 +17,9 @@ def grad_u_exact(x, y):
     a = np.pi / 3.0 - th / 3.0     # = (2*th/3 + pi/3) - th
     return c * np.sin(a), c * np.cos(a)
 
-
 def g_dirichlet(x, y):
-    """Potencial prescrito na fronteira (aqui: a própria solução exata)."""
     return u_exact(x, y)
 
-
-# ----------------------------------------------------------------------------
-# Geração de malha com Gmsh
-# ----------------------------------------------------------------------------
 def generate_mesh(lc, grade=1.0):
     """
     Malha triangular (P1) do domínio em L.
@@ -65,7 +43,7 @@ def generate_mesh(lc, grade=1.0):
     gmsh.model.mesh.generate(2)
 
     tags, coords, _ = gmsh.model.mesh.getNodes()
-    _, _, enodes = gmsh.model.mesh.getElements(2)     # triângulos de 3 nós
+    _, _, enodes = gmsh.model.mesh.getElements(2) 
     gmsh.finalize()
 
     tri_tags = np.asarray(enodes[0], dtype=np.int64).reshape(-1, 3)
@@ -76,7 +54,6 @@ def generate_mesh(lc, grade=1.0):
     tri = np.vectorize(remap.get)(tri_tags)
     return X, orient_ccw(X, tri)
 
-
 def orient_ccw(X, tri):
     tri = tri.copy()
     a, b, c = X[tri[:, 0]], X[tri[:, 1]], X[tri[:, 2]]
@@ -85,13 +62,8 @@ def orient_ccw(X, tri):
     tri[neg, 1], tri[neg, 2] = tri[neg, 2].copy(), tri[neg, 1].copy()
     return tri
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência: base de Lagrange P_p (p = 1, 2, 3)
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
 REF_VERT = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-
 
 def ref_nodes(p):
     """Nós de referência: vértices, nós de aresta (arestas 01,12,20), nó interno."""
@@ -103,10 +75,8 @@ def ref_nodes(p):
         nodes.append(np.array([1 / 3, 1 / 3]))
     return np.array(nodes)
 
-
 def monomials(p):
     return [(i, d - i) for d in range(p + 1) for i in range(d + 1)]
-
 
 def basis(p, pts):
     """phi (nq,nb) e dphi (nq,nb,2) no elemento de referência."""
@@ -120,7 +90,6 @@ def basis(p, pts):
     dMy = np.stack([j * x ** i * y ** max(j - 1, 0) if j > 0 else 0 * x for (i, j) in mons], axis=1)
     return M @ C, np.stack([dMx @ C, dMy @ C], axis=2)
 
-
 def quad_tri(n):
     """Quadratura de Gauss em triângulo de referência (Duffy), n x n pontos."""
     xg, wg = np.polynomial.legendre.leggauss(n)
@@ -129,10 +98,6 @@ def quad_tri(n):
     W = np.outer(wg, wg) * (1 - U)
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), W.ravel()
 
-
-# ----------------------------------------------------------------------------
-# Numeração dos graus de liberdade P_p a partir da malha P1
-# ----------------------------------------------------------------------------
 def build_space(X, tri, p):
     nt, nv = len(tri), len(X)
     e = np.stack([tri[:, [i, j]] for (i, j) in LOCAL_EDGES], axis=1)      # (nt,3,2)
@@ -169,7 +134,6 @@ def build_space(X, tri, p):
         dir_mask[nv + np.where(bnd_edge)[0] * nper + k] = True
     return coords, conn, dir_mask
 
-
 def geometry(coords, conn):
     """Jacobiano (afim): det e inversa por elemento."""
     v = coords[conn[:, :3]]
@@ -180,10 +144,6 @@ def geometry(coords, conn):
     invJ[:, 1, 0], invJ[:, 1, 1] = -J[:, 1, 0] / det, J[:, 0, 0] / det
     return v[:, 0], J, det, invJ
 
-
-# ----------------------------------------------------------------------------
-# Montagem e solução com eliminação dos nós de Dirichlet
-# ----------------------------------------------------------------------------
 def assemble_stiffness(coords, conn, p):
     xq, wq = quad_tri(p + 1)
     _, dphi = basis(p, xq)
@@ -195,7 +155,6 @@ def assemble_stiffness(coords, conn, p):
     cols = np.tile(conn, (1, nb)).ravel()
     n = len(coords)
     return sp.coo_matrix((Ke.ravel(), (rows, cols)), shape=(n, n)).tocsr()
-
 
 def solve(X, tri, p):
     coords, conn, dmask = build_space(X, tri, p)
@@ -209,10 +168,6 @@ def solve(X, tri, p):
     u[free] = spla.spsolve(K[free][:, free].tocsc(), rhs)
     return coords, conn, u
 
-
-# ----------------------------------------------------------------------------
-# Erros em L2 e na norma de energia (|u-uh|_{H1})
-# ----------------------------------------------------------------------------
 def compute_errors(coords, conn, u, p, nq=10, chunk=4000):
     xq, wq = quad_tri(nq)
     phi, dphi = basis(p, xq)
@@ -232,15 +187,10 @@ def compute_errors(coords, conn, u, p, nq=10, chunk=4000):
         h1 += np.einsum("q,eq,e->", wq, (gx - gh[..., 0]) ** 2 + (gy - gh[..., 1]) ** 2, a)
     return np.sqrt(e2), np.sqrt(h1)
 
-
 def mesh_h(X, tri):
     d = [np.linalg.norm(X[tri[:, i]] - X[tri[:, j]], axis=1) for i, j in LOCAL_EDGES]
     return max(np.max(x) for x in d)
 
-
-# ----------------------------------------------------------------------------
-# Estudo de convergência
-# ----------------------------------------------------------------------------
 def convergence_study(lcs, orders=(1, 2, 3), grade=1.0):
     res = {p: {"h": [], "L2": [], "E": [], "ndof": []} for p in orders}
     for lc in lcs:
@@ -254,7 +204,6 @@ def convergence_study(lcs, orders=(1, 2, 3), grade=1.0):
             print(f"lc={lc:7.4f} h={h:.4f} P{p}  ndof={len(coords):7d}  "
                   f"errL2={eL2:.3e}  errEnergia={eE:.3e}")
     return res
-
 
 def plot_convergence(res, fname="convergencia.png"):
     fig, ax = plt.subplots(1, 2, figsize=(11, 4.5))
@@ -282,14 +231,3 @@ def plot_solution(lc=0.05, p=2, fname="solucao.png"):
         c = a.tricontourf(X[:, 0], X[:, 1], tri, z, 30)
         plt.colorbar(c, ax=a); a.set_aspect("equal"); a.set_title(t)
     plt.tight_layout(); plt.savefig(fname, dpi=150)
-
-
-if __name__ == "__main__":
-    lcs = [0.4, 0.2, 0.1, 0.05, 0.025]
-    res = convergence_study(lcs)                 # malhas quase uniformes
-    plot_convergence(res, "convergencia.png")
-    plot_solution()
-    # Opcional: malha refinada perto da singularidade (melhora as taxas de P2 e P3)
-    # res_g = convergence_study(lcs, grade=0.05)
-    # plot_convergence(res_g, "convergencia_graduada.png")
-    plt.show()
