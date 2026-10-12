@@ -1,6 +1,6 @@
 import numpy as np
-from main.shape_functions import shape_functions
-from main.geometry import jacobian, xi_eta_to_xy
+from shape_functions import shape_functions
+from geometry import jacobian, xi_eta_to_xy
 
 def triangle_quadrature(nq=8):
 

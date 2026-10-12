@@ -1,31 +1,13 @@
-"""
-Método dos Elementos Finitos com elementos QUADRILATERAIS de Lagrange Q1 e Q2
-Problema: Laplace (sem cargas) no domínio em L, com solução exata
-        V = R^(2/3) * sin(2*theta/3 + pi/3),   -pi/2 <= theta <= pi
-
- - Dirichlet imposto por ELIMINAÇÃO das equações dos nós de Dirichlet.
- - Malhas de quadriláteros geradas pelo Gmsh (import gmsh dentro do Python).
- - Geometria dos elementos: mapeamento bilinear (isoparamétrico em Q1), logo o
-   Jacobiano varia dentro do elemento e é avaliado em cada ponto de quadratura.
- - Estudo de convergência: erros em L2 e na norma de energia vs h (log-log).
-
-Dependências: numpy, scipy, matplotlib, gmsh   (pip install gmsh)
-"""
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 import gmsh
 
-
-# ----------------------------------------------------------------------------
-# Solução exata e condição de contorno (função fornecida pelo usuário)
-# ----------------------------------------------------------------------------
 def u_exact(x, y):
     R = np.hypot(x, y)
     th = np.arctan2(y, x)          # no L: -pi/2 <= theta <= pi
     return R ** (2.0 / 3.0) * np.sin(2.0 * th / 3.0 + np.pi / 3.0)
-
 
 def grad_u_exact(x, y):
     R = np.maximum(np.hypot(x, y), 1e-14)
@@ -34,22 +16,12 @@ def grad_u_exact(x, y):
     a = np.pi / 3.0 - th / 3.0
     return c * np.sin(a), c * np.cos(a)
 
-
 def g_dirichlet(x, y):
     """Potencial prescrito na fronteira (aqui: a própria solução exata)."""
     return u_exact(x, y)
 
-
-# ----------------------------------------------------------------------------
-# Geração de malha de quadriláteros com Gmsh
-# ----------------------------------------------------------------------------
 def generate_mesh(lc, grade=1.0):
-    """
-    Malha de quadriláteros do domínio em L.
-    lc    : tamanho característico (nominal) dos elementos
-    grade : fator de tamanho em (0,0); grade<1 refina perto da singularidade.
-    Retorna X (nv,2) e quad (nq,4) com vértices em ordem anti-horária.
-    """
+
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.option.setNumber("Mesh.Algorithm", 8)               # frontal-Delaunay p/ quads
@@ -82,7 +54,6 @@ def generate_mesh(lc, grade=1.0):
     quad = np.vectorize(remap.get)(q_tags)
     return X, orient_ccw(X, quad)
 
-
 def orient_ccw(X, quad):
     quad = quad.copy()
     v = X[quad]
@@ -92,13 +63,8 @@ def orient_ccw(X, quad):
     quad[neg] = quad[neg][:, [0, 3, 2, 1]]
     return quad
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência [-1,1]^2: base de Lagrange Q_p (p = 1, 2)
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 3), (3, 0)]
 REF_VERT = np.array([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]])
-
 
 def ref_nodes(p):
     """Nós de referência: 4 vértices, [4 pontos médios de aresta, centro (Q2)]."""
@@ -108,7 +74,6 @@ def ref_nodes(p):
             nodes.append(0.5 * (REF_VERT[i] + REF_VERT[j]))
         nodes.append(np.array([0.0, 0.0]))
     return np.array(nodes)
-
 
 def lagrange_1d(t_nodes, t):
     """Polinômios de Lagrange 1D e derivadas em t: arrays (nt, n)."""
@@ -128,7 +93,6 @@ def lagrange_1d(t_nodes, t):
             dL[:, k] += term
     return L, dL
 
-
 def basis(p, pts):
     """phi (nq,nb) e dphi (nq,nb,2) (derivadas em relação a xi, eta)."""
     t1 = np.linspace(-1.0, 1.0, p + 1)
@@ -142,17 +106,12 @@ def basis(p, pts):
                      for i, j in zip(ia, ja)], axis=1)
     return phi, dphi
 
-
 def quad_rule(n):
     """Gauss-Legendre tensorial n x n em [-1,1]^2."""
     xg, wg = np.polynomial.legendre.leggauss(n)
     U, V = np.meshgrid(xg, xg, indexing="ij")
     return np.stack([U.ravel(), V.ravel()], axis=1), np.outer(wg, wg).ravel()
 
-
-# ----------------------------------------------------------------------------
-# Numeração dos graus de liberdade Q_p a partir da malha Q1
-# ----------------------------------------------------------------------------
 def build_space(X, quad, p):
     ne_el, nv = len(quad), len(X)
     e = np.stack([quad[:, [i, j]] for (i, j) in LOCAL_EDGES], axis=1)      # (nel,4,2)
@@ -182,7 +141,6 @@ def build_space(X, quad, p):
         dir_mask[nv + np.where(bnd_edge)[0]] = True
     return coords, conn, dir_mask
 
-
 def geometry(coords, conn, xq):
     """Mapeamento bilinear: pontos físicos, det J e J^{-1} em cada ponto de quadratura."""
     v = coords[conn[:, :4]]                                                # (nel,4,2)
@@ -195,10 +153,6 @@ def geometry(coords, conn, xq):
     invJ[..., 1, 0], invJ[..., 1, 1] = -J[..., 1, 0] / det, J[..., 0, 0] / det
     return xp, det, invJ
 
-
-# ----------------------------------------------------------------------------
-# Montagem e solução com eliminação dos nós de Dirichlet
-# ----------------------------------------------------------------------------
 def assemble_stiffness(coords, conn, p):
     xq, wq = quad_rule(p + 2)
     _, dphi = basis(p, xq)
@@ -211,7 +165,6 @@ def assemble_stiffness(coords, conn, p):
     n = len(coords)
     return sp.coo_matrix((Ke.ravel(), (rows, cols)), shape=(n, n)).tocsr()
 
-
 def solve(X, quad, p):
     coords, conn, dmask = build_space(X, quad, p)
     K = assemble_stiffness(coords, conn, p)
@@ -223,10 +176,6 @@ def solve(X, quad, p):
     u[free] = spla.spsolve(K[free][:, free].tocsc(), rhs)
     return coords, conn, u
 
-
-# ----------------------------------------------------------------------------
-# Erros em L2 e na norma de energia (|u-uh|_{H1})
-# ----------------------------------------------------------------------------
 def compute_errors(coords, conn, u, p, nq=10, chunk=2000):
     xq, wq = quad_rule(nq)
     phi, dphi = basis(p, xq)
@@ -245,17 +194,12 @@ def compute_errors(coords, conn, u, p, nq=10, chunk=2000):
         h1 += np.sum(w * ((gx - gh[..., 0]) ** 2 + (gy - gh[..., 1]) ** 2))
     return np.sqrt(e2), np.sqrt(h1)
 
-
 def mesh_h(X, quad):
     """h = maior aresta da malha."""
     return max(np.max(np.linalg.norm(X[quad[:, i]] - X[quad[:, j]], axis=1))
                for i, j in LOCAL_EDGES)
 
-
-# ----------------------------------------------------------------------------
-# Estudo de convergência
-# ----------------------------------------------------------------------------
-def convergence_study(lcs, orders=(1, 2), grade=1.0):
+def convergence_study_c(lcs, orders=(1, 2), grade=1.0):
     res = {p: {"h": [], "L2": [], "E": [], "ndof": []} for p in orders}
     for lc in lcs:
         X, quad = generate_mesh(lc, grade)
@@ -269,8 +213,7 @@ def convergence_study(lcs, orders=(1, 2), grade=1.0):
                   f"errL2={eL2:.3e}  errEnergia={eE:.3e}")
     return res
 
-
-def plot_convergence(res, fname="convergencia_quad.png"):
+def plot_convergence_c(res, fname="convergencia_quad.png"):
     fig, ax = plt.subplots(1, 2, figsize=(11, 4.5))
     for p, d in res.items():
         h = np.array(d["h"])
@@ -283,11 +226,10 @@ def plot_convergence(res, fname="convergencia_quad.png"):
     for a in ax:
         a.legend()
     plt.tight_layout()
-    plt.savefig(fname, dpi=150)
-    print("Figura salva em", fname)
+    #plt.savefig(fname, dpi=150)
+    #print("Figura salva em", fname)
 
-
-def plot_solution(lc=0.1, p=2, fname="solucao_quad.png"):
+def plot_solution_c(lc=0.1, p=2, fname="solucao_quad.png"):
     X, quad = generate_mesh(lc)
     coords, conn, u = solve(X, quad, p)
     nv = len(X)
@@ -296,6 +238,6 @@ def plot_solution(lc=0.1, p=2, fname="solucao_quad.png"):
     for a, z, t in zip(ax, (u[:nv], u[:nv] - u_exact(X[:, 0], X[:, 1])), ("Solução FEM", "Erro nodal")):
         c = a.tricontourf(X[:, 0], X[:, 1], tri, z, 30)
         plt.colorbar(c, ax=a); a.set_aspect("equal"); a.set_title(t)
-    plt.tight_layout(); plt.savefig(fname, dpi=150)
+    plt.tight_layout()#; plt.savefig(fname, dpi=150)
 
 

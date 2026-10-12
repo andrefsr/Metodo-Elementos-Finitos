@@ -218,8 +218,8 @@ def plot_convergence(res, fname="convergencia.png"):
     for a in ax:
         a.legend()
     plt.tight_layout()
-    plt.savefig(fname, dpi=150)
-    print("Figura salva em", fname)
+    #plt.savefig(fname, dpi=150)
+    #print("Figura salva em", fname)
 
 
 def plot_solution(lc=0.05, p=2, fname="solucao.png"):
@@ -230,4 +230,4 @@ def plot_solution(lc=0.05, p=2, fname="solucao.png"):
     for a, z, t in zip(ax, (u[:nv], u[:nv] - u_exact(X[:, 0], X[:, 1])), ("Solução FEM", "Erro nodal")):
         c = a.tricontourf(X[:, 0], X[:, 1], tri, z, 30)
         plt.colorbar(c, ax=a); a.set_aspect("equal"); a.set_title(t)
-    plt.tight_layout(); plt.savefig(fname, dpi=150)
+    plt.tight_layout()#; plt.savefig(fname, dpi=150)
