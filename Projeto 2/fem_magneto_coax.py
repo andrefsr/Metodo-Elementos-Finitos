@@ -1,37 +1,10 @@
-"""
-Magnetostática 2D com simetria longitudinal (corrente só na direção z, campo só em x-y)
-Elementos triangulares de Lagrange P1 e P2 (P2 isoparamétrico: lados curvos do Gmsh).
-
-Equação para o potencial vetor  A = A_z(x,y) z :
-        -div( (1/mu) grad A_z ) = J_z          B = rot A = ( dA_z/dy , -dA_z/dx )
-
-Problema: cabo coaxial de comprimento infinito, I = 1 A
-    condutor interno  r < a = 1 cm          : J_z = -I/(pi a^2)      (entrando na página)
-    isolante          a < r < b = sqrt(3) cm: J_z = 0
-    condutor externo  b < r < c = 2 cm      : J_z = +I/(pi (c^2-b^2)) (saindo da página)
-    mu = mu_0 em todo o domínio;   A_z = 0 em r = c.
-
- - Dirichlet imposto por ELIMINAÇÃO das equações dos nós de Dirichlet.
- - Malhas triangulares geradas pelo Gmsh (import gmsh dentro do Python).
- - Item (a): domínio completo.   Item (b): 1/4 do domínio (x>=0, y>=0):
-       A_z = 0 sobre o arco r = c  (Dirichlet)
-       dA_z/dn = 0 sobre os eixos x e y (Neumann homogênea = condição NATURAL, nada a impor)
-   e a energia total é 4 vezes a energia do quarto de domínio.
- - Saídas: energia magnética por unidade de comprimento, erros em L2 e na norma de
-   energia, gráficos log-log de convergência, mapas de A_z e do campo B.
-
-Dependências: numpy, scipy, matplotlib, gmsh   (pip install gmsh)
-Unidades: SI (coordenadas em metros).
-"""
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 import gmsh
 
-# ----------------------------------------------------------------------------
 # Dados do problema
-# ----------------------------------------------------------------------------
 MU0 = 4e-7 * np.pi
 I = 1.0
 A, B, C = 1e-2, np.sqrt(3.0) * 1e-2, 2e-2          # raios a, b, c (m)
@@ -40,26 +13,19 @@ J_Z = np.array([-I / (np.pi * A ** 2),             # região 0: r < a
                 0.0,                               # região 1: a < r < b
                 I / (np.pi * (C ** 2 - B ** 2))])  # região 2: b < r < c
 
-
 def g_dirichlet(x, y):
     """A_z prescrito em r = c."""
     return np.zeros_like(x)
 
-
-# ----------------------------------------------------------------------------
 # Solução analítica (válida para mu_r = 1 em todas as regiões)
-# ----------------------------------------------------------------------------
 _K0 = MU0 * I / (2 * np.pi)
 _D = C ** 2 - B ** 2
-
 
 def _A3(r):                                        # b <= r <= c
     return -_K0 / _D * (C ** 2 * np.log(C / r) - (C ** 2 - r ** 2) / 2)
 
-
 _AB = float(_A3(B))
 _AA = _AB - _K0 * np.log(B / A)
-
 
 def A_exact(x, y):
     r = np.maximum(np.hypot(x, y), 1e-300)
@@ -67,28 +33,22 @@ def A_exact(x, y):
     A2 = _AB - _K0 * np.log(B / r)
     return np.where(r <= A, A1, np.where(r <= B, A2, _A3(r)))
 
-
 def dAdr_exact(r):
     r = np.maximum(r, 1e-300)
     return np.where(r <= A, _K0 * r / A ** 2,
                     np.where(r <= B, _K0 / r, _K0 * (C ** 2 - r ** 2) / (_D * r)))
-
 
 def grad_A_exact(x, y):
     r = np.maximum(np.hypot(x, y), 1e-300)
     d = dAdr_exact(r)
     return d * x / r, d * y / r
 
-
 def energy_exact():
     """W' = (mu0 I^2 / 4 pi) [1/4 + ln(b/a) + termo da região b<r<c]   (J/m)."""
     t3 = (C ** 4 * np.log(C / B) - C ** 2 * _D + (C ** 4 - B ** 4) / 4) / _D ** 2
     return MU0 * I ** 2 / (4 * np.pi) * (0.25 + np.log(B / A) + t3)
 
-
-# ----------------------------------------------------------------------------
 # Geração de malha triangular (6 nós, ordem 2) com Gmsh
-# ----------------------------------------------------------------------------
 def generate_mesh(lc, quarter=False):
     """
     Retorna:
@@ -152,7 +112,6 @@ def generate_mesh(lc, quarter=False):
     coords = table[used][:, :2]
     return coords, orient_ccw(coords, conn), region
 
-
 def orient_ccw(coords, conn):
     conn = conn.copy()
     a, b, c = (coords[conn[:, k]] for k in range(3))
@@ -161,7 +120,6 @@ def orient_ccw(coords, conn):
     conn[neg] = conn[neg][:, [0, 2, 1, 5, 4, 3]]
     return conn
 
-
 def build_spaces(coords, conn6):
     """Espaços P1 (vértices, lados retos) e P2 (isoparamétrico, nós curvos do Gmsh)."""
     verts = np.unique(conn6[:, :3])
@@ -169,19 +127,14 @@ def build_spaces(coords, conn6):
     remap[verts] = np.arange(len(verts))
     return {1: (coords[verts], remap[conn6[:, :3]]), 2: (coords, conn6)}
 
-
 def dirichlet_mask(coords):
     """Nós sobre r = c (A_z = 0). Os eixos de simetria do 1/4 de domínio ficam livres (Neumann)."""
     r = np.hypot(coords[:, 0], coords[:, 1])
     return np.abs(r - C) < 1e-7 * C
 
-
-# ----------------------------------------------------------------------------
 # Elemento de referência (triângulo unitário): base de Lagrange P_p, p = 1, 2
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
 REF_VERT = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-
 
 def ref_nodes(p):
     nodes = [*REF_VERT]
@@ -189,7 +142,6 @@ def ref_nodes(p):
         for (i, j) in LOCAL_EDGES:
             nodes.append(0.5 * (REF_VERT[i] + REF_VERT[j]))
     return np.array(nodes)
-
 
 def basis(p, pts):
     """phi (nq,nb) e dphi (nq,nb,2) em relação a (xi, eta)."""
@@ -203,7 +155,6 @@ def basis(p, pts):
     dMy = np.stack([j * x ** i * y ** (j - 1) if j > 0 else 0 * x for (i, j) in mons], axis=1)
     return M @ Cm, np.stack([dMx @ Cm, dMy @ Cm], axis=2)
 
-
 def quad_tri(n):
     """Gauss no triângulo unitário (Duffy), n x n pontos; pesos somam 1/2."""
     xg, wg = np.polynomial.legendre.leggauss(n)
@@ -211,7 +162,6 @@ def quad_tri(n):
     U, V = np.meshgrid(xg, xg, indexing="ij")
     W = np.outer(wg, wg) * (1 - U)
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), W.ravel()
-
 
 def geometry(coords, conn, xq, p):
     """Mapeamento isoparamétrico de ordem p (afim em P1, quadrático e curvo em P2)."""
@@ -225,10 +175,7 @@ def geometry(coords, conn, xq, p):
     invJ[..., 1, 0], invJ[..., 1, 1] = -J[..., 1, 0] / det, J[..., 0, 0] / det
     return xp, det, invJ
 
-
-# ----------------------------------------------------------------------------
 # Montagem e solução com eliminação dos nós de Dirichlet
-# ----------------------------------------------------------------------------
 def assemble(coords, conn, p, region):
     xq, wq = quad_tri(p + 3)
     phi, dphi = basis(p, xq)
@@ -246,7 +193,6 @@ def assemble(coords, conn, p, region):
     F = np.bincount(conn.ravel(), weights=fe.ravel(), minlength=n)
     return K, F
 
-
 def solve(coords, conn, p, region):
     K, F = assemble(coords, conn, p, region)
     dmask = dirichlet_mask(coords)
@@ -258,10 +204,7 @@ def solve(coords, conn, p, region):
     u[free] = spla.spsolve(K[free][:, free].tocsc(), rhs)
     return u
 
-
-# ----------------------------------------------------------------------------
 # Energia e erros
-# ----------------------------------------------------------------------------
 def compute_errors(coords, conn, u, p, region, nq=10, chunk=2000):
     """
     errL2 = ||A - Ah||_L2
@@ -287,16 +230,12 @@ def compute_errors(coords, conn, u, p, region, nq=10, chunk=2000):
         W += 0.5 * np.sum(w * nu * (gh[..., 0] ** 2 + gh[..., 1] ** 2))
     return np.sqrt(e2), np.sqrt(en), W
 
-
 def mesh_h(coords, conn):
     v = conn[:, :3]
     return max(np.max(np.linalg.norm(coords[v[:, i]] - coords[v[:, j]], axis=1))
                for i, j in LOCAL_EDGES)
 
-
-# ----------------------------------------------------------------------------
 # Estudo de convergência
-# ----------------------------------------------------------------------------
 def convergence_study(lcs, orders=(1, 2), quarter=False, mesh_fn=generate_mesh):
     fac = 4.0 if quarter else 1.0                            # energia total = 4 x energia do quarto
     Wex = energy_exact()
@@ -318,7 +257,6 @@ def convergence_study(lcs, orders=(1, 2), quarter=False, mesh_fn=generate_mesh):
     print(f"W exata = {Wex:.8e} J/m   (indutância L' = 2W/I^2 = {2*Wex/I**2:.6e} H/m)")
     return res
 
-
 def plot_convergence(res, fname, titulo=""):
     fig, ax = plt.subplots(1, 3, figsize=(16, 4.5))
     titles = ("Erro $L_2$ de $A_z$", "Erro na norma de energia", "Erro relativo da energia")
@@ -333,13 +271,8 @@ def plot_convergence(res, fname, titulo=""):
     for a in ax:
         a.legend()
     plt.tight_layout()
-    plt.savefig(fname, dpi=150)
-    print("Figura salva em", fname)
 
-
-# ----------------------------------------------------------------------------
 # Visualização: potencial vetor, campo B e perfil radial de |B|
-# ----------------------------------------------------------------------------
 def plot_fields(lc=5e-4, p=2, quarter=False, fname="campos_coaxial.png", mesh_fn=generate_mesh):
     coords6, conn6, region = mesh_fn(lc, quarter)
     coords, conn = build_spaces(coords6, conn6)[p]
@@ -377,20 +310,3 @@ def plot_fields(lc=5e-4, p=2, quarter=False, fname="campos_coaxial.png", mesh_fn
     for a in ax[:2]:
         a.set_aspect("equal"); a.set_xlabel("x (m)"); a.set_ylabel("y (m)")
     plt.tight_layout()
-    plt.savefig(fname, dpi=150)
-    print("Figura salva em", fname)
-
-
-if __name__ == "__main__":
-    lcs = [3e-3, 1.5e-3, 7.5e-4, 3.75e-4]            # tamanhos característicos (m)
-
-    print("=== (a) Domínio completo ===")
-    res_full = convergence_study(lcs, quarter=False)
-    plot_convergence(res_full, "convergencia_magneto_completo.png", " (completo)")
-    plot_fields(quarter=False, fname="campos_coaxial_completo.png")
-
-    print("\n=== (b) 1/4 do domínio: A=0 em r=c; Neumann natural nos eixos x e y ===")
-    res_q = convergence_study(lcs, quarter=True)
-    plot_convergence(res_q, "convergencia_magneto_quarto.png", " (1/4)")
-    plot_fields(quarter=True, fname="campos_coaxial_quarto.png")
-    plt.show()
