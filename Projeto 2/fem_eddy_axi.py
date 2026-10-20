@@ -540,3 +540,36 @@ def plot_sibc_comparison(m_full, m_sibc, fname="comparacao_sibc.png"):
     ax[2].set_title("Diferença SIBC × condutor"); ax[2].grid(alpha=.3, which="both")
     plt.tight_layout(); #plt.savefig(fname, dpi=140)
     #print("Figura salva em", fname)
+
+
+def plot_results_eddy_axi():
+    d = skin_depth(1.0)
+    print(f"Profundidade de penetração (mu_r=1): delta = {d*1e3:.3f} mm;  espessura = {(RB-RA)*1e3:.1f} mm")
+    ai, af = Analytic(1.0, False), Analytic(1.0, True)
+    print(f"Analítico mu_r=1: |B_cavidade|/B0 = {abs(ai.B_inside())/B0:.5f} (infinito), "
+            f"{abs(af.B_inside())/B0:.5f} (R = 0,3 m);  P = {ai.losses():.5e} W")
+
+    print("\n=== (a) esfera condutora, mu_r = 1 ===")
+    res_a = {p: run_case(1.0, p) for p in (1, 2)}
+    for m in res_a.values():
+        print_case(m)
+    plot_fields(res_a[2], "campos_casca_mur1.png")
+
+    print("\n=== (b) permeabilidades relativas 10, 100, 1000 (malhas adaptadas a delta) ===")
+    full = {}
+    for mur in (10, 100, 1000):
+        print(f"delta = {skin_depth(mur)*1e3:.3f} mm")
+        for p in (1, 2):
+            full[(mur, p)] = run_case(mur, p)
+            print_case(full[(mur, p)])
+        plot_fields(full[(mur, 2)], f"campos_casca_mur{mur}.png")
+
+    print("\n=== (b) mu_r = 1000: condição de baixa profundidade de penetração (SIBC) ===")
+    sib = {p: run_case(1000, p, sibc=True) for p in (1, 2)}
+    for m in sib.values():
+        print_case(m)
+    Pf, Ps = full[(1000, 2)]["P"], sib[2]["P"]
+    print(f"Perdas P2: condutor = {Pf:.5e} W, SIBC = {Ps:.5e} W, dif. relativa = {abs(Ps-Pf)/Pf:.2e}")
+    plot_sibc_comparison(full[(1000, 2)], sib[2])
+    plt.show()
+    return
