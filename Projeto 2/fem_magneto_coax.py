@@ -206,11 +206,6 @@ def solve(coords, conn, p, region):
 
 # Energia e erros
 def compute_errors(coords, conn, u, p, region, nq=10, chunk=2000):
-    """
-    errL2 = ||A - Ah||_L2
-    errE  = sqrt( int (1/mu) |grad(A-Ah)|^2 )     (norma de energia)
-    W     = (1/2) int (1/mu) |grad Ah|^2          (energia magnética, J/m, no domínio da malha)
-    """
     xq, wq = quad_tri(nq)
     phi, dphi = basis(p, xq)
     e2 = en = W = 0.0
@@ -252,8 +247,6 @@ def convergence_study(lcs, orders=(1, 2), quarter=False, mesh_fn=generate_mesh):
             Werr = abs(W - Wex) / Wex
             for k, v in zip(("h", "L2", "E", "W", "Werr", "ndof"), (h, eL2, eE, W, Werr, len(coords))):
                 res[p][k].append(v)
-            print(f"lc={lc*1e3:6.3f}mm h={h*1e3:6.3f}mm P{p} nel={len(conn):6d} ndof={len(coords):7d} "
-                  f"errL2={eL2:.3e} errE={eE:.3e}  W={W:.6e} J/m  errW(rel)={Werr:.3e}")
     print(f"W exata = {Wex:.8e} J/m   (indutância L' = 2W/I^2 = {2*Wex/I**2:.6e} H/m)")
     return res
 

@@ -1,22 +1,3 @@
-"""
-Modos TE e TM de um guia de onda retangular (a x b) pelo Método dos Elementos Finitos
-Elementos triangulares de Lagrange P1 e P2 (malhas do Gmsh, import gmsh dentro do Python).
-
-Problema de autovalores escalar (k_c^2 = autovalor):
-    TM :  -lap(E_z) = k_c^2 E_z       E_z = 0  nas paredes (Dirichlet, eliminado do sistema)
-    TE :  -lap(H_z) = k_c^2 H_z       dH_z/dn = 0 nas paredes (Neumann natural)
-  forma fraca:  K u = k_c^2 M u,   K = int grad(phi_i).grad(phi_j),  M = int phi_i phi_j
-
- - TM: as equações dos nós de Dirichlet são ELIMINADAS (só os nós livres entram no sistema).
- - TE: o autovalor nulo (m = n = 0) é descartado.
- - Autovalores analíticos: k_c^2 = (m pi/a)^2 + (n pi/b)^2  (TE: m=n=0 excluído; TM: mn = 0 excluído).
- - Gera: tabela dos 5 menores autovalores com o erro relativo (TE e TM, P1 e P2),
-   campos dos modos TE10 e TE20 (H_z e campo elétrico transversal) e a curva de
-   dispersão k0 a x beta/k0 para TE10 e TE20 em 1,9-5,0 GHz (passo 100 MHz).
-
-Dependências: numpy, scipy, matplotlib, gmsh   (pip install gmsh)
-Unidades: SI.
-"""
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -28,10 +9,6 @@ A_G, B_G = 0.08, 0.04            # a = 8,0 cm, b = 4,0 cm (guia preenchido com a
 C0 = 299792458.0
 H_MAX = A_G / 20                 # tamanho máximo de elemento escolhido (4 mm)
 
-
-# ----------------------------------------------------------------------------
-# Malha (Gmsh): retângulo [0,a] x [0,b], triângulos de 6 nós (ordem 2)
-# ----------------------------------------------------------------------------
 def generate_mesh(hmax=H_MAX):
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -57,7 +34,6 @@ def generate_mesh(hmax=H_MAX):
     coords = table[used][:, :2]
     return coords, orient_ccw(coords, conn)
 
-
 def orient_ccw(coords, conn):
     conn = conn.copy()
     a, b, c = (coords[conn[:, k]] for k in range(3))
@@ -66,7 +42,6 @@ def orient_ccw(coords, conn):
     conn[neg] = conn[neg][:, [0, 2, 1, 5, 4, 3]]
     return conn
 
-
 def build_spaces(coords, conn6):
     """Espaços P1 (vértices) e P2 (vértices + pontos médios dos lados)."""
     verts = np.unique(conn6[:, :3])
@@ -74,18 +49,12 @@ def build_spaces(coords, conn6):
     remap[verts] = np.arange(len(verts))
     return {1: (coords[verts], remap[conn6[:, :3]]), 2: (coords, conn6)}
 
-
 def boundary_mask(coords, tol=1e-9):
     x, y = coords[:, 0], coords[:, 1]
     return (x < tol) | (x > A_G - tol) | (y < tol) | (y > B_G - tol)
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência (triângulo unitário): base de Lagrange P_p, p = 1, 2
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
 REF_VERT = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-
 
 def ref_nodes(p):
     nodes = [*REF_VERT]
@@ -93,7 +62,6 @@ def ref_nodes(p):
         for (i, j) in LOCAL_EDGES:
             nodes.append(0.5 * (REF_VERT[i] + REF_VERT[j]))
     return np.array(nodes)
-
 
 def basis(p, pts):
     mons = [(i, d - i) for d in range(p + 1) for i in range(d + 1)]
@@ -106,14 +74,12 @@ def basis(p, pts):
     dMy = np.stack([j * x ** i * y ** (j - 1) if j > 0 else 0 * x for (i, j) in mons], axis=1)
     return M @ Cm, np.stack([dMx @ Cm, dMy @ Cm], axis=2)
 
-
 def quad_tri(n):
     xg, wg = np.polynomial.legendre.leggauss(n)
     xg, wg = 0.5 * (xg + 1), 0.5 * wg
     U, V = np.meshgrid(xg, xg, indexing="ij")
     W = np.outer(wg, wg) * (1 - U)
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), W.ravel()
-
 
 def geometry(coords, conn, xq, p):
     v = coords[conn]
@@ -125,7 +91,6 @@ def geometry(coords, conn, xq, p):
     invJ[..., 0, 0], invJ[..., 0, 1] = J[..., 1, 1] / det, -J[..., 0, 1] / det
     invJ[..., 1, 0], invJ[..., 1, 1] = -J[..., 1, 0] / det, J[..., 0, 0] / det
     return xp, det, invJ
-
 
 def assemble(coords, conn, p):
     xq, wq = quad_tri(p + 3)
@@ -142,12 +107,7 @@ def assemble(coords, conn, p):
     mk = lambda D: sp.coo_matrix((D.ravel(), (rows, cols)), shape=(n, n)).tocsr()
     return mk(Ke), mk(Me)
 
-
-# ----------------------------------------------------------------------------
-# Autovalores / autovetores
-# ----------------------------------------------------------------------------
 def analytic_eigs(kind, nmax=12):
-    """Lista ordenada [(k_c^2, m, n), ...] (TE: sem (0,0); TM: m,n >= 1)."""
     L = []
     for m in range(nmax + 1):
         for n in range(nmax + 1):
@@ -159,12 +119,7 @@ def analytic_eigs(kind, nmax=12):
     L.sort(key=lambda t: (round(t[0], 6), -t[1], t[2]))
     return L
 
-
 def solve_eigen(coords, conn, p, kind, nev=8):
-    """
-    Retorna (k_c^2 ordenados, autovetores nos nós (M-ortonormais)).
-    TM: nós de Dirichlet eliminados.  TE: Neumann natural, autovalor nulo descartado.
-    """
     K, M = assemble(coords, conn, p)
     n = len(coords)
     if kind == "TM":
@@ -182,7 +137,6 @@ def solve_eigen(coords, conn, p, kind, nev=8):
     full[free] = vecs
     return vals, full
 
-
 def eigen_table(coords, conn, p, kind, nshow=5, nev=8):
     vals, _ = solve_eigen(coords, conn, p, kind, nev)
     an = analytic_eigs(kind)[:nshow]
@@ -191,23 +145,13 @@ def eigen_table(coords, conn, p, kind, nshow=5, nev=8):
         rows.append((f"{kind}{m}{n}", kex, vals[i], abs(vals[i] - kex) / kex))
     return rows
 
-
 def print_table(rows, kind, p, hmax):
     print(f"\n{kind} - P{p} (h_max = {hmax*1e3:.2f} mm)")
     print(f"  {'modo':6s} {'k_c^2 analítico (1/m²)':>24s} {'k_c^2 FEM (1/m²)':>20s} {'erro relativo':>15s}")
     for nome, kex, kh, er in rows:
         print(f"  {nome:6s} {kex:24.6f} {kh:20.6f} {er:15.3e}")
 
-
-# ----------------------------------------------------------------------------
-# Campos dos modos TE10 e TE20
-# ----------------------------------------------------------------------------
 def mode_field(coords, conn, p, kind, m, n, nev=8):
-    """
-    Autovetor FEM do modo (m,n), com sinal/mistura ajustados ao modo analítico: em autovalores
-    degenerados (TE20 e TE01 têm o mesmo k_c com a = 2b) projeta-se o modo analítico no
-    subespaço dos autovetores degenerados.  Retorna (campo normalizado, k_c^2 do modo).
-    """
     vals, vecs = solve_eigen(coords, conn, p, kind, nev)
     kex = (m * np.pi / A_G) ** 2 + (n * np.pi / B_G) ** 2
     sel = np.where(np.abs(vals - kex) < 0.03 * kex)[0]            # cluster em torno do autovalor
@@ -218,14 +162,12 @@ def mode_field(coords, conn, p, kind, m, n, nev=8):
     u /= np.max(np.abs(u))
     return u, vals[sel[np.argmax(np.abs(coef))]]
 
-
 def grad_at_barycenters(coords, conn, u, p):
     xq = np.array([[1 / 3, 1 / 3]])
     _, dphi = basis(p, xq)
     xp, det, invJ = geometry(coords, conn, xq, p)
     G = np.einsum("qbk,eqki->eqbi", dphi, invJ)[:, 0]
     return xp[:, 0, :], np.einsum("ebi,eb->ei", G, u[conn])
-
 
 def plot_modes(coords, conn, p, fname="modos_TE10_TE20.png"):
     tri = mtri.Triangulation(coords[:, 0], coords[:, 1], conn[:, :3])
@@ -253,19 +195,13 @@ def plot_modes(coords, conn, p, fname="modos_TE10_TE20.png"):
         ax[r, 1].set_title(f"TE{m}{n} - analítico")
         for a_ in ax[r]:
             a_.set_aspect("equal"); a_.set_xlabel("x (m)"); a_.set_ylabel("y (m)")
-    plt.tight_layout(); #plt.savefig(fname, dpi=140)
-    # print("Figura salva em", fname)
+    plt.tight_layout()
 
-
-# ----------------------------------------------------------------------------
-# Curva de dispersão  k0 a  x  beta/k0   (1,9 - 5,0 GHz, passo de 100 MHz)
-# ----------------------------------------------------------------------------
 def dispersion(kc2):
     f = np.arange(1.9e9, 5.0e9 + 1, 0.1e9)
     k0 = 2 * np.pi * f / C0
     beta = np.sqrt((k0 ** 2 - kc2).astype(complex))                # abaixo do corte: beta = -j alpha
     return f, k0, beta
-
 
 def plot_dispersion(kc2_fem, fname="dispersao_guia.png"):
     fig, ax = plt.subplots(figsize=(8, 5.5))
@@ -281,15 +217,11 @@ def plot_dispersion(kc2_fem, fname="dispersao_guia.png"):
     ax.set_xlabel(r"$k_0 a$"); ax.set_ylabel(r"$\beta/k_0$")
     ax.set_title("Curva de dispersão normalizada (1,9 - 5,0 GHz)")
     ax.grid(alpha=.3); ax.legend(fontsize=8)
-    plt.tight_layout(); #plt.savefig(fname, dpi=140)
-    # print("Figura salva em", fname)
-
+    plt.tight_layout()
 
 def plot_results_fem_guia():
     print(f"Guia a = {A_G*100:.1f} cm, b = {B_G*100:.1f} cm; h_max = {H_MAX*1e3:.1f} mm; "
           f"f_c(TE10) = {C0/(2*A_G)/1e9:.3f} GHz, f_c(TE20) = {C0/A_G/1e9:.3f} GHz")
-
-    # --- escolha do h_max: erro máximo entre os 5 menores autovalores
     print("\nEstudo de h_max (maior erro relativo entre os 5 menores autovalores):")
     for hm in (A_G / 10, A_G / 20, A_G / 40):
         c6, cn6 = generate_mesh(hm)
@@ -297,15 +229,8 @@ def plot_results_fem_guia():
         for p in (1, 2):
             e = {k: max(r[3] for r in eigen_table(*sp_[p], p, k)) for k in ("TE", "TM")}
             print(f"  h_max = {hm*1e3:5.2f} mm  P{p}: TE = {e['TE']:.2e}   TM = {e['TM']:.2e}   (nós = {len(sp_[p][0])})")
-
-    # --- tabelas com o h_max escolhido
     coords6, conn6 = generate_mesh(H_MAX)
     spaces = build_spaces(coords6, conn6)
-    # for p in (1, 2):
-    #     for kind in ("TE", "TM"):
-    #         print_table(eigen_table(*spaces[p], p, kind), kind, p, H_MAX)
-
-    # --- campos TE10 e TE20 e curva de dispersão (P2)
     plot_modes(*spaces[2], 2)
     kc2 = {"TE10": mode_field(*spaces[2], 2, "TE", 1, 0)[1], "TE20": mode_field(*spaces[2], 2, "TE", 2, 0)[1]}
     plot_dispersion(kc2)

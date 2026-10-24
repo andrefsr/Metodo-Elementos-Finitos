@@ -1,34 +1,3 @@
-"""
-Correntes induzidas (quase estático, regime senoidal) com SIMETRIA AXIAL
-Elementos triangulares de Lagrange P1 e P2 (P2 isoparamétrico, lados curvos do Gmsh).
-
-Formulação: potencial vetor A = A_phi(rho,z) phi, fasor com dependência exp(j w t):
-
-    rot( (1/mu) rot A ) = - j w sigma A
-
-Forma fraca no plano meridiano (x = rho, y = z), integrando em 2*pi*rho drho dz:
-
-  int (1/mu) [ rho grad(A).grad(v) + d(A v)/drho + A v / rho ] dS
-        + j w int sigma rho A v dS  = 0
-
- - Dirichlet imposto por ELIMINAÇÃO das equações dos nós de Dirichlet:
-       A = 0 no eixo (rho = 0)  e  A = B0 rho / 2 (campo uniforme B0 z) em r = 0,3 m.
- - Simetria em relação ao plano z = 0 (campo uniforme em z => A_phi par em z):
-   modela-se só rho >= 0, z >= 0, com dA/dz = 0 em z = 0 (condição natural).
-   Grandezas globais (perdas) são multiplicadas por 2.
- - Malhas do Gmsh (import gmsh). A casca condutora é malhada com camadas
-   estruturadas, de espessura crescente a partir da superfície externa, adaptadas à
-   profundidade de penetração delta = sqrt(2/(w mu sigma)).
- - Condição de contorno de baixa profundidade de penetração (impedância de superfície,
-   Leontovich):  E_t = Zs (n x H),  Zs = (1+j)/(sigma delta). O condutor é removido da
-   malha e entra um termo de contorno  j w mu0 / Zs * int rho A v dl  na superfície r = b.
- - Solução analítica (esfera oca em campo uniforme, harmônicos esféricos de ordem 1)
-   para validação, para o domínio infinito e para o domínio finito de raio 0,3 m
-   com a mesma condição de contorno do FEM.
-
-Dependências: numpy, scipy, matplotlib, gmsh   (pip install gmsh)
-Unidades: SI. B0 é a amplitude (valor de pico) da indução externa.
-"""
 import time
 import numpy as np
 import scipy.sparse as sp
@@ -39,9 +8,6 @@ import matplotlib.tri as mtri
 from matplotlib.colors import LogNorm
 import gmsh
 
-# ----------------------------------------------------------------------------
-# Dados do problema
-# ----------------------------------------------------------------------------
 MU0 = 4e-7 * np.pi
 SIGMA = 5e8                 # S/m (casca)
 FREQ = 50.0                 # Hz
@@ -49,20 +15,13 @@ OMEGA = 2 * np.pi * FREQ
 B0 = 1.0                    # T (amplitude)
 RA, RB, RR = 0.05, 0.055, 0.30      # raio interno, externo da casca, fronteira externa (m)
 
-
 def skin_depth(mur):
     return np.sqrt(2.0 / (OMEGA * MU0 * mur * SIGMA))
-
 
 def g_dirichlet(x, y):
     """A_phi prescrito (eixo e fronteira externa): campo uniforme B0 z => A = B0 rho/2."""
     return 0.5 * B0 * x
 
-
-# ----------------------------------------------------------------------------
-# Solução analítica: esfera oca condutora em campo uniforme senoidal
-#   A_phi = f(r) sin(theta);  f = C r (r<a);  P psi+ + Q psi- (casca);  alpha r + D/r^2 (r>b)
-# ----------------------------------------------------------------------------
 class Analytic:
     def __init__(self, mur, finite=True):
         a, b, R = RA, RB, RR
@@ -127,15 +86,7 @@ class Analytic:
         val, _ = quad(fun, RA, RB, points=pts or None, limit=400, epsabs=0, epsrel=1e-10)
         return 4 * np.pi / 3 * SIGMA * OMEGA ** 2 * val
 
-
-# ----------------------------------------------------------------------------
-# Geração de malha com Gmsh
-# ----------------------------------------------------------------------------
 def layer_division(t, h1, q=1.25, nmin=4):
-    """
-    Divisão radial da casca (espessura t) com primeira camada h1 junto à superfície externa.
-    Retorna N (nº de camadas) e a razão r (>1: camadas crescem para o interior).
-    """
     if t / h1 <= nmin:
         return nmin, 1.0
     N = max(nmin, int(np.ceil(np.log(1 + t * (q - 1) / h1) / np.log(q))))
@@ -145,7 +96,6 @@ def layer_division(t, h1, q=1.25, nmin=4):
         mid = 0.5 * (lo + hi)
         lo, hi = (mid, hi) if S(mid) < t else (lo, mid)
     return N, 0.5 * (lo + hi)
-
 
 def _read_mesh(surfs):
     tags, xyz, _ = gmsh.model.mesh.getNodes()
@@ -166,14 +116,8 @@ def _read_mesh(surfs):
     coords = table[used][:, :2]
     return coords, orient_ccw(coords, conn), region
 
-
 def generate_mesh_conductor(mur, refine=1.0, h_t=3e-3, n_delta=4, growth=1.25,
                             lc_far=2.5e-2, lc_in=5e-3):
-    """
-    Quarto do meridiano (rho>=0, z>=0): cavidade (região 0), casca (região 1), ar externo (região 2).
-    A casca usa malha transfinita (camadas) com refino geométrico junto à superfície r = b,
-    primeira camada = delta/n_delta. refine>1 refina tudo.
-    """
     h_t, lc_far, lc_in, n_delta = h_t / refine, lc_far / refine, lc_in / refine, n_delta * refine
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -204,7 +148,6 @@ def generate_mesh_conductor(mur, refine=1.0, h_t=3e-3, n_delta=4, growth=1.25,
     gmsh.model.mesh.setOrder(2)
     return _read_mesh([(0, s_in), (1, s_sh), (2, s_out)])
 
-
 def generate_mesh_sibc(refine=1.0, h_t=3e-3, lc_far=2.5e-2):
     """Só o ar externo (b < r < R): o condutor é substituído pela condição de impedância em r = b."""
     h_t, lc_far = h_t / refine, lc_far / refine
@@ -224,7 +167,6 @@ def generate_mesh_sibc(refine=1.0, h_t=3e-3, lc_far=2.5e-2):
     gmsh.model.mesh.setOrder(2)
     return _read_mesh([(2, s)])
 
-
 def orient_ccw(coords, conn):
     conn = conn.copy()
     a, b, c = (coords[conn[:, k]] for k in range(3))
@@ -233,7 +175,6 @@ def orient_ccw(coords, conn):
     conn[neg] = conn[neg][:, [0, 2, 1, 5, 4, 3]]
     return conn
 
-
 def build_spaces(coords, conn6):
     """Espaços P1 (vértices, lados retos) e P2 (isoparamétrico, nós curvos do Gmsh)."""
     verts = np.unique(conn6[:, :3])
@@ -241,19 +182,13 @@ def build_spaces(coords, conn6):
     remap[verts] = np.arange(len(verts))
     return {1: (coords[verts], remap[conn6[:, :3]]), 2: (coords, conn6)}
 
-
 def dirichlet_mask(coords, tol=1e-9):
     """Eixo (rho = 0) e fronteira externa (r = R). O plano z = 0 fica livre (Neumann natural)."""
     r = np.hypot(coords[:, 0], coords[:, 1])
     return (coords[:, 0] < tol) | (np.abs(r - RR) < tol)
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência (triângulo unitário): base de Lagrange P_p, p = 1, 2
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
 REF_VERT = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-
 
 def ref_nodes(p):
     nodes = [*REF_VERT]
@@ -261,7 +196,6 @@ def ref_nodes(p):
         for (i, j) in LOCAL_EDGES:
             nodes.append(0.5 * (REF_VERT[i] + REF_VERT[j]))
     return np.array(nodes)
-
 
 def basis(p, pts):
     mons = [(i, d - i) for d in range(p + 1) for i in range(d + 1)]
@@ -274,14 +208,12 @@ def basis(p, pts):
     dMy = np.stack([j * x ** i * y ** (j - 1) if j > 0 else 0 * x for (i, j) in mons], axis=1)
     return M @ Cm, np.stack([dMx @ Cm, dMy @ Cm], axis=2)
 
-
 def quad_tri(n):
     xg, wg = np.polynomial.legendre.leggauss(n)
     xg, wg = 0.5 * (xg + 1), 0.5 * wg
     U, V = np.meshgrid(xg, xg, indexing="ij")
     W = np.outer(wg, wg) * (1 - U)
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), W.ravel()
-
 
 def geometry(coords, conn, xq, p):
     v = coords[conn]
@@ -294,19 +226,10 @@ def geometry(coords, conn, xq, p):
     invJ[..., 1, 0], invJ[..., 1, 1] = -J[..., 1, 0] / det, J[..., 0, 0] / det
     return xp, det, invJ
 
-
-# ----------------------------------------------------------------------------
-# Montagem e solução complexa com eliminação dos nós de Dirichlet
-# ----------------------------------------------------------------------------
 def material(mur):
     return np.array([1.0, mur, 1.0]), np.array([0.0, SIGMA, 0.0])      # por região 0, 1, 2
 
-
 def assemble(coords, conn, p, region, mur):
-    """
-    Sistema multiplicado por mu0 (melhor condicionamento):
-      K = int (1/mu_r)[rho grad.grad + d(phi_i phi_j)/drho + phi_i phi_j / rho],  M = int mu0 sigma rho phi_i phi_j
-    """
     MUR, SIG = material(mur)
     xq, wq = quad_tri(p + 3)
     phi, dphi = basis(p, xq)
@@ -328,7 +251,6 @@ def assemble(coords, conn, p, region, mur):
     cols = np.tile(conn, (1, nb)).ravel()
     return sp.coo_matrix((Ke.ravel(), (rows, cols)), shape=(n, n)).tocsr()
 
-
 def circle_edges(coords, conn, p, R, tol=1e-9):
     """Lados de elementos sobre o círculo r = R: nós [vi, vj] (P1) ou [vi, vj, meio] (P2)."""
     r = np.hypot(coords[:, 0], coords[:, 1])
@@ -339,7 +261,6 @@ def circle_edges(coords, conn, p, R, tol=1e-9):
         nodes = np.stack([vi, vj], 1) if p == 1 else np.stack([vi, vj, conn[:, 3 + le]], 1)
         out.append(nodes[on])
     return np.vstack(out)
-
 
 def edge_rule(coords, edges, p, n=4):
     sg, wg = np.polynomial.legendre.leggauss(n)
@@ -355,11 +276,8 @@ def edge_rule(coords, edges, p, n=4):
     dl = np.linalg.norm(np.einsum("qb,ebj->eqj", dN, X), axis=2)
     return N, xq, w[None, :] * dl
 
-
 def sibc_impedance(mur):
-    """Zs = (1+j)/(sigma delta) = sqrt(j w mu / sigma)."""
     return (1 + 1j) / (SIGMA * skin_depth(mur))
-
 
 def solve(coords, conn, p, region, mur, sibc=False):
     """sibc=True: malha só com o ar externo e condição de impedância de superfície em r = b."""
@@ -382,10 +300,6 @@ def solve(coords, conn, p, region, mur, sibc=False):
     u[free] = spla.spsolve(K[free][:, free].tocsc(), rhs)
     return u
 
-
-# ----------------------------------------------------------------------------
-# Pós-processamento
-# ----------------------------------------------------------------------------
 def fields_at_quad(coords, conn, u, p, nq=6):
     xq, wq = quad_tri(nq)
     phi, dphi = basis(p, xq)
@@ -394,7 +308,6 @@ def fields_at_quad(coords, conn, u, p, nq=6):
     ue = u[conn]
     return (xp, wq[None, :] * np.abs(det), np.einsum("qb,eb->eq", phi, ue),
             np.einsum("eqbi,eb->eqi", G, ue))
-
 
 def metrics(coords, conn, u, p, region, mur, ana, nq=6):
     """B na cavidade, perdas na casca, erro L2 (peso rho) em relação à solução analítica."""
@@ -413,7 +326,6 @@ def metrics(coords, conn, u, p, region, mur, ana, nq=6):
         out["B_in"] = np.sum((w * Bz)[cav]) / np.sum(w[cav])
     return out
 
-
 def sibc_losses(coords, conn, u, p, mur):
     """P = (1/2) w^2 Re(1/Zs) int |A|^2 dS   (hemisfério x 2 pela simetria)."""
     edges = circle_edges(coords, conn, p, RB)
@@ -422,12 +334,10 @@ def sibc_losses(coords, conn, u, p, mur):
     Zs = sibc_impedance(mur)
     return 0.5 * OMEGA ** 2 * np.real(1 / Zs) * 2 * np.pi * np.sum(wdl * xq[..., 0] * abs(Aq) ** 2) * 2
 
-
 def equator_profile(coords, u, tol=1e-9):
     m = np.abs(coords[:, 1]) < tol
     idx = np.where(m)[0][np.argsort(coords[m, 0])]
     return coords[idx, 0], u[idx]
-
 
 def surface_profile(coords, u, R=RB, tol=1e-9):
     r = np.hypot(coords[:, 0], coords[:, 1])
@@ -436,10 +346,6 @@ def surface_profile(coords, u, R=RB, tol=1e-9):
     o = np.argsort(th)
     return th[o], u[idx][o]
 
-
-# ----------------------------------------------------------------------------
-# Execução de casos
-# ----------------------------------------------------------------------------
 def run_case(mur, p, refine=1.0, sibc=False, mesh=None):
     t0 = time.time()
     coords6, conn6, region = mesh if mesh is not None else (
@@ -454,7 +360,6 @@ def run_case(mur, p, refine=1.0, sibc=False, mesh=None):
                   conn=conn, u=u, region=region, p=p, mur=mur, sibc=sibc))
     return m
 
-
 def print_case(m):
     mur, ana_f, ana_i = m["mur"], Analytic(m["mur"], True), Analytic(m["mur"], False)
     tag = "SIBC" if m["sibc"] else "condutor"
@@ -464,12 +369,7 @@ def print_case(m):
         s += (f" | |B_in|/B0={abs(m['B_in'])/B0:.4e} (analit. dom.finito {abs(ana_f.B_inside())/B0:.4e}, "
               f"infinito {abs(ana_i.B_inside())/B0:.4e})")
     s += f" | P={m['P']:.5e} W (analit. {ana_f.losses():.5e})"
-    print(s)
 
-
-# ----------------------------------------------------------------------------
-# Gráficos
-# ----------------------------------------------------------------------------
 def plot_fields(m, fname="campos_casca.png"):
     coords, conn, u, region, p, mur = (m[k] for k in ("coords", "conn", "u", "region", "p", "mur"))
     tri = mtri.Triangulation(coords[:, 0], coords[:, 1], conn[:, :3])
@@ -509,9 +409,7 @@ def plot_fields(m, fname="campos_casca.png"):
     ax[1, 1].set_ylabel(r"$|J_\varphi|$ no equador (A/m²)")
     ax[1, 1].set_title(f"Decaimento da corrente (δ = {skin_depth(mur)*1e3:.2f} mm)")
     ax[1, 1].legend(); ax[1, 1].grid(alpha=.3)
-    plt.tight_layout(); #plt.savefig(fname, dpi=140)
-    #print("Figura salva em", fname)
-
+    plt.tight_layout()
 
 def plot_sibc_comparison(m_full, m_sibc, fname="comparacao_sibc.png"):
     ana = Analytic(m_full["mur"], True)
@@ -538,38 +436,22 @@ def plot_sibc_comparison(m_full, m_sibc, fname="comparacao_sibc.png"):
     ax[2].semilogy(xs * 1e2, np.abs(np.abs(us) - ref) / np.max(ref), "g-")
     ax[2].set_xlabel(r"$\rho$ no equador (cm)"); ax[2].set_ylabel(r"$||A|_{SIBC}-|A|_{cond}| / \max|A|$")
     ax[2].set_title("Diferença SIBC × condutor"); ax[2].grid(alpha=.3, which="both")
-    plt.tight_layout(); #plt.savefig(fname, dpi=140)
-    #print("Figura salva em", fname)
-
+    plt.tight_layout()
 
 def plot_results_eddy_axi():
     d = skin_depth(1.0)
-    print(f"Profundidade de penetração (mu_r=1): delta = {d*1e3:.3f} mm;  espessura = {(RB-RA)*1e3:.1f} mm")
     ai, af = Analytic(1.0, False), Analytic(1.0, True)
-    print(f"Analítico mu_r=1: |B_cavidade|/B0 = {abs(ai.B_inside())/B0:.5f} (infinito), "
-            f"{abs(af.B_inside())/B0:.5f} (R = 0,3 m);  P = {ai.losses():.5e} W")
-
-    print("\n=== (a) esfera condutora, mu_r = 1 ===")
     res_a = {p: run_case(1.0, p) for p in (1, 2)}
-    for m in res_a.values():
-        print_case(m)
     plot_fields(res_a[2], "campos_casca_mur1.png")
-
-    print("\n=== (b) permeabilidades relativas 10, 100, 1000 (malhas adaptadas a delta) ===")
     full = {}
     for mur in (10, 100, 1000):
-        print(f"delta = {skin_depth(mur)*1e3:.3f} mm")
         for p in (1, 2):
             full[(mur, p)] = run_case(mur, p)
-            print_case(full[(mur, p)])
         plot_fields(full[(mur, 2)], f"campos_casca_mur{mur}.png")
-
-    print("\n=== (b) mu_r = 1000: condição de baixa profundidade de penetração (SIBC) ===")
     sib = {p: run_case(1000, p, sibc=True) for p in (1, 2)}
     for m in sib.values():
         print_case(m)
     Pf, Ps = full[(1000, 2)]["P"], sib[2]["P"]
-    print(f"Perdas P2: condutor = {Pf:.5e} W, SIBC = {Ps:.5e} W, dif. relativa = {abs(Ps-Pf)/Pf:.2e}")
     plot_sibc_comparison(full[(1000, 2)], sib[2])
     plt.show()
     return

@@ -1,35 +1,3 @@
-"""
-Espalhamento por um cilindro PEC (raio a = lambda/2), polarização TM (E = E_z z),
-formulação de CAMPO ESPALHADO com truncamento do domínio por condições BGT-0, BGT-1 e BGT-2.
-Elementos triangulares de Lagrange P1 e P2 (P2 isoparamétrico: lados curvos do Gmsh).
-
-Convenção temporal exp(j w t).  Onda incidente  E_inc = z exp(-j k0 x)   (d = (1,0)), f = 300 MHz.
-
-Equação para o campo espalhado u = E_z^esp  na coroa  a < r < R:
-        lap(u) + k0^2 u = 0
-    PEC em r = a :  u = -E_inc   (Dirichlet não homogêneo, equações eliminadas do sistema)
-    r = R        :  condição BGT  (∂u/∂r = ... )
-
-Forma fraca:  int grad(u).grad(v) - k0^2 int u v - oint (∂u/∂r) v dl = 0
-
-Condições (operadores de Bayliss-Gunzburger-Turkel em 2D, circunferência de raio R):
-  BGT-0 :  ∂u/∂r = -jk0 u
-  BGT-1 :  ∂u/∂r = -(jk0 + 1/(2R)) u
-  BGT-2 :  ∂u/∂r = -(jk0 + 1/(2R)) u + c2 ( R^2 u_ss + u/4 ),   c2 = 1/(2R (jk0 R + 1))
-           (u_ss = derivada segunda em relação ao comprimento de arco)
-Termos de contorno resultantes (alpha = jk0 + 1/(2R)):
-  BGT-0 : jk0 * oint u v dl
-  BGT-1 : alpha * oint u v dl
-  BGT-2 : (alpha - c2/4) * oint u v dl + c2 R^2 * oint (du/ds)(dv/ds) dl
-
-Solução analítica (série de Bessel/Hankel, H^(2) = onda de saída):
-  u = - sum_n eps_n (-j)^n [ J_n(k0 a) / H_n^(2)(k0 a) ] H_n^(2)(k0 r) cos(n phi)
-
-Erro:  sqrt( (1/N) sum_i |u_ex(x_i) - u_h(x_i)|^2 )  nos nós (vértices) livres da malha
-       (os nós do PEC são Dirichlet e têm erro nulo); h_max = lambda/20.
-
-Dependências: numpy, scipy, matplotlib, gmsh   (pip install gmsh)
-"""
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -45,10 +13,6 @@ RA = LAM / 2                      # raio do cilindro PEC
 H_MAX = LAM / 20
 RS = (0.75, 1.0, 1.25, 1.5)       # raios externos em unidades de lambda
 
-
-# ----------------------------------------------------------------------------
-# Solução analítica
-# ----------------------------------------------------------------------------
 def u_exact(x, y, nmax=60):
     r = np.maximum(np.hypot(x, y), 1e-300)
     phi = np.arctan2(y, x)
@@ -59,14 +23,9 @@ def u_exact(x, y, nmax=60):
         u += c * hankel2(n, K0 * r) * np.cos(n * phi)
     return u
 
-
 def u_inc(x, y):
     return np.exp(-1j * K0 * x)
 
-
-# ----------------------------------------------------------------------------
-# Malha (Gmsh): coroa RA < r < R, triângulos de 6 nós (ordem 2, lados curvos)
-# ----------------------------------------------------------------------------
 def generate_mesh(R, h=H_MAX):
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -99,7 +58,6 @@ def generate_mesh(R, h=H_MAX):
     coords = table[used][:, :2]
     return coords, orient_ccw(coords, conn)
 
-
 def orient_ccw(coords, conn):
     conn = conn.copy()
     a, b, c = (coords[conn[:, k]] for k in range(3))
@@ -108,21 +66,14 @@ def orient_ccw(coords, conn):
     conn[neg] = conn[neg][:, [0, 2, 1, 5, 4, 3]]
     return conn
 
-
 def build_spaces(coords, conn6):
-    """Espaços P1 (vértices, lados retos) e P2 (isoparamétrico, nós curvos do Gmsh)."""
     verts = np.unique(conn6[:, :3])
     remap = -np.ones(len(coords), dtype=np.int64)
     remap[verts] = np.arange(len(verts))
     return {1: (coords[verts], remap[conn6[:, :3]]), 2: (coords, conn6)}
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência (triângulo unitário): base de Lagrange P_p, p = 1, 2
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
 REF_VERT = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-
 
 def ref_nodes(p):
     nodes = [*REF_VERT]
@@ -130,7 +81,6 @@ def ref_nodes(p):
         for (i, j) in LOCAL_EDGES:
             nodes.append(0.5 * (REF_VERT[i] + REF_VERT[j]))
     return np.array(nodes)
-
 
 def basis(p, pts):
     mons = [(i, d - i) for d in range(p + 1) for i in range(d + 1)]
@@ -143,14 +93,12 @@ def basis(p, pts):
     dMy = np.stack([j * x ** i * y ** (j - 1) if j > 0 else 0 * x for (i, j) in mons], axis=1)
     return M @ Cm, np.stack([dMx @ Cm, dMy @ Cm], axis=2)
 
-
 def quad_tri(n):
     xg, wg = np.polynomial.legendre.leggauss(n)
     xg, wg = 0.5 * (xg + 1), 0.5 * wg
     U, V = np.meshgrid(xg, xg, indexing="ij")
     W = np.outer(wg, wg) * (1 - U)
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), W.ravel()
-
 
 def geometry(coords, conn, xq, p):
     v = coords[conn]
@@ -163,19 +111,13 @@ def geometry(coords, conn, xq, p):
     invJ[..., 1, 0], invJ[..., 1, 1] = -J[..., 1, 0] / det, J[..., 0, 0] / det
     return xp, det, invJ
 
-
-# ----------------------------------------------------------------------------
-# Montagem
-# ----------------------------------------------------------------------------
 def to_sparse(Ke, conn, n):
     nb = conn.shape[1]
     rows = np.repeat(conn, nb, axis=1).ravel()
     cols = np.tile(conn, (1, nb)).ravel()
     return sp.coo_matrix((Ke.ravel(), (rows, cols)), shape=(n, n)).tocsr()
 
-
 def assemble(coords, conn, p):
-    """K - k0^2 M (domínio)."""
     xq, wq = quad_tri(p + 3)
     phi, dphi = basis(p, xq)
     _, det, invJ = geometry(coords, conn, xq, p)
@@ -184,9 +126,7 @@ def assemble(coords, conn, p):
     Ke = np.einsum("eq,eqbi,eqci->ebc", w, G, G) - K0 ** 2 * np.einsum("eq,qb,qc->ebc", w, phi, phi)
     return to_sparse(Ke, conn, len(coords))
 
-
 def circle_edges(coords, conn, p, R, tol=1e-8):
-    """Lados de elementos sobre r = R: nós [vi, vj] (P1) ou [vi, vj, meio] (P2)."""
     r = np.hypot(coords[:, 0], coords[:, 1])
     out = []
     for le, (i, j) in enumerate(LOCAL_EDGES):
@@ -196,9 +136,7 @@ def circle_edges(coords, conn, p, R, tol=1e-8):
         out.append(nodes[on])
     return np.vstack(out)
 
-
 def edge_matrices(coords, edges, p, n=4):
-    """int N_b N_c dl  e  int (dN_b/ds)(dN_c/ds) dl   ao longo dos lados curvos da fronteira."""
     sg, wg = np.polynomial.legendre.leggauss(n)
     s, w = 0.5 * (sg + 1), 0.5 * wg
     if p == 1:
@@ -212,7 +150,6 @@ def edge_matrices(coords, edges, p, n=4):
     Me = np.einsum("q,eq,qb,qc->ebc", w, dl, N, N)
     Ke = np.einsum("q,eq,qb,qc->ebc", w, 1.0 / dl, dN, dN)
     return Me, Ke
-
 
 def bgt_matrix(coords, conn, p, R, order):
     edges = circle_edges(coords, conn, p, R)
@@ -228,10 +165,6 @@ def bgt_matrix(coords, conn, p, R, order):
     c2 = 1.0 / (2 * R * (jk * R + 1.0))
     return (alpha - c2 / 4) * Mg + c2 * R ** 2 * Kg
 
-
-# ----------------------------------------------------------------------------
-# Solução com eliminação dos nós de Dirichlet (PEC)
-# ----------------------------------------------------------------------------
 def solve(coords, conn, p, R, order):
     A = (assemble(coords, conn, p) + bgt_matrix(coords, conn, p, R, order)).tocsr()
     r = np.hypot(coords[:, 0], coords[:, 1])
@@ -243,17 +176,13 @@ def solve(coords, conn, p, R, order):
     u[free] = spla.spsolve(A[free][:, free].tocsc(), rhs)
     return u
 
-
 def rms_error(coords, conn, u):
-    """sqrt( (1/N) sum |u_ex - u_h|^2 ) nos vértices livres (fora do PEC)."""
     verts = np.unique(conn[:, :3])
     r = np.hypot(coords[verts, 0], coords[verts, 1])
     v = verts[r > RA + 1e-8]
     return np.sqrt(np.mean(np.abs(u_exact(coords[v, 0], coords[v, 1]) - u[v]) ** 2))
 
-
 def run_table(orders_fem=(1, 2), h=H_MAX, verbose=True):
-    """erro[p][(R/lambda, ordem BGT)]"""
     err = {p: {} for p in orders_fem}
     for Rl in RS:
         R = Rl * LAM
@@ -268,17 +197,12 @@ def run_table(orders_fem=(1, 2), h=H_MAX, verbose=True):
             print(f"R = {Rl:4.2f} lambda: malha com {len(coords6)} nós, {len(conn6)} elementos")
     return err
 
-
 def print_table(err, p):
     print(f"\nErro RMS (P{p}, h_max = lambda/20)")
     print(f"  {'R/lambda':>9s} {'BGT-0':>12s} {'BGT-1':>12s} {'BGT-2':>12s}")
     for Rl in RS:
         print(f"  {Rl:9.2f} " + " ".join(f"{err[p][(Rl, o)]:12.4e}" for o in (0, 1, 2)))
 
-
-# ----------------------------------------------------------------------------
-# Gráficos: E_z (espalhado) x phi sobre r = R  para a melhor combinação (R, BGT)
-# ----------------------------------------------------------------------------
 def plot_phi(err, p=2, fname="Ez_x_phi.png", h=H_MAX):
     (Rl, ordem_best), e_best = min(err[p].items(), key=lambda kv: kv[1])
     R = Rl * LAM
@@ -301,14 +225,4 @@ def plot_phi(err, p=2, fname="Ez_x_phi.png", h=H_MAX):
         a.set_xlabel(r"$\phi$ (graus)"); a.set_ylabel(r"$E_z^{esp}$")
         a.set_title(f"{nome} de $E_z^{{esp}}$ em r = {Rl}$\\lambda$ (FEM P{p})")
         a.set_xlim(0, 360); a.grid(alpha=.3); a.legend()
-    plt.tight_layout(); #plt.savefig(fname, dpi=140)
-    # print("Figura salva em", fname)
-
-
-# if __name__ == "__main__":
-    # print(f"lambda = {LAM:.5f} m, a = lambda/2 = {RA:.5f} m, k0 a = {K0*RA:.4f}, h_max = lambda/20 = {H_MAX:.4f} m")
-    # err = run_table((1, 2))
-    # # for p in (1, 2):
-    # #     print_table(err, p)
-    # plot_phi(err, p=2)
-    # plt.show()
+    plt.tight_layout()
