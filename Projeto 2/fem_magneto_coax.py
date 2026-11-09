@@ -14,7 +14,7 @@ J_Z = np.array([-I / (np.pi * A ** 2),             # região 0: r < a
                 I / (np.pi * (C ** 2 - B ** 2))])  # região 2: b < r < c
 
 def g_dirichlet(x, y):
-    """A_z prescrito em r = c."""
+    """A_z = 0 em r = c."""
     return np.zeros_like(x)
 
 # Solução analítica (válida para mu_r = 1 em todas as regiões)
