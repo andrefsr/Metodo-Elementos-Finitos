@@ -1,33 +1,3 @@
-"""
-Autovalores e autovetores de um guia de onda retangular (a x b) com elementos de Nédélec
-(tipo 1, mais baixa ordem) em malhas triangulares.
-
-Problema vetorial 2D:     rot rot u = lambda u   em Omega = [0,a] x [0,b]
-    (TE)   n x u = 0            sobre dOmega      (u = campo elétrico transversal)
-    (TM)   n x rot u = 0        sobre dOmega      (u = campo magnético transversal; condição NATURAL)
-
-Em 2D, psi = rot u satisfaz  -lap(psi) = lambda psi  (para lambda != 0, u = rot^T psi / lambda), logo
-    n x u = 0       <=>  d psi/dn = 0 (Neumann)   ->  lambda = (m pi/a)^2 + (n pi/b)^2,  (m,n) != (0,0)   [TE]
-    n x rot u = 0   <=>  psi = 0     (Dirichlet)  ->  lambda = (m pi/a)^2 + (n pi/b)^2,  m,n >= 1        [TM]
-Além desses, rot rot tem o autovalor lambda = 0 com multiplicidade enorme (campos gradientes). Eles são
-físicos (núcleo do rotacional) e não são "espúrios"; devem ser ignorados. O código usa a técnica
-shift-and-invert com um deslocamento logo acima de cada autovalor exato procurado, de modo que o ARPACK
-devolve diretamente os modos físicos e nunca o núcleo.
-
-Forma fraca:  (rot u, rot v) = lambda (u, v),  K u = lambda M u,  em H0(rot) (TE: equações das arestas de
-contorno ELIMINADAS) ou em H(rot) (TM: todas as arestas livres).
-
-Elemento de Nédélec (aresta i->j): N = lambda_i grad lambda_j - lambda_j grad lambda_i.  Elemento de
-referência: N^1 = (1-eta, xi), N^2 = (-eta, xi), N^3 = (-eta, xi-1), rot N^ = 2.  Mapeamento de Piola:
-N = J^{-T} N^, rot N = rot^ N^/det J.  Matrizes do elemento a partir do elemento de referência:
-    K_ij = 2/|det J|,     M_ij = |det J| sum_ab G_ab int N^_i,a N^_j,b dxi,   G = (J^T J)^{-1}.
-
-Tabela: cinco menores autovalores (exato e FEM com h1, h2, h3, h1/h2 = h2/h3 = 2) e
-    alpha = ln( (lambda_h1 - lambda_h2) / (lambda_h2 - lambda_h3) ) / ln 2.
-
-Dependências: numpy, scipy, matplotlib  (e gmsh, só com --gmsh)
-Unidades: SI (a = 8 cm, b = 4 cm, ar).
-"""
 import sys
 import numpy as np
 import scipy.sparse as sp
@@ -36,12 +6,7 @@ import matplotlib.pyplot as plt
 
 A_G, B_G = 0.08, 0.04
 
-
-# ----------------------------------------------------------------------------
-# Autovalores exatos
-# ----------------------------------------------------------------------------
 def exact_eigs(kind, nmax=12):
-    """[(lambda, m, n), ...] ordenados (com multiplicidade). TE: (m,n) != (0,0); TM: m,n >= 1."""
     L = []
     for m in range(nmax + 1):
         for n in range(nmax + 1):
@@ -53,12 +18,7 @@ def exact_eigs(kind, nmax=12):
     L.sort(key=lambda t: (round(t[0], 6), -t[1], t[2]))
     return L
 
-
-# ----------------------------------------------------------------------------
-# Malhas triangulares
-# ----------------------------------------------------------------------------
 def mesh_rect(nx, ny):
-    """nx x ny retângulos em [0,a] x [0,b], cada um dividido em 2 triângulos (anti-horários)."""
     xs, ys = np.linspace(0, A_G, nx + 1), np.linspace(0, B_G, ny + 1)
     X, Y = np.meshgrid(xs, ys, indexing="ij")
     nodes = np.stack([X.ravel(), Y.ravel()], axis=1)
@@ -70,9 +30,7 @@ def mesh_rect(nx, ny):
             tri += [(a, b, c), (a, c, d)]
     return nodes, np.array(tri)
 
-
 def mesh_gmsh(h):
-    """Malha não estruturada do Gmsh (import gmsh dentro do Python), tamanho máximo h."""
     import gmsh
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -97,25 +55,18 @@ def mesh_gmsh(h):
     tri[det < 0, 1], tri[det < 0, 2] = tri[det < 0, 2].copy(), tri[det < 0, 1].copy()
     return nodes, tri
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência, mapeamento, arestas
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
-
 
 def ref_basis(xi):
     x, e = xi[:, 0], xi[:, 1]
     return np.stack([np.stack([1 - e, x], axis=1), np.stack([-e, x], axis=1),
-                     np.stack([-e, x - 1], axis=1)], axis=1)                          # (nq, 3, 2)
-
+                     np.stack([-e, x - 1], axis=1)], axis=1)
 
 def quad_tri(n):
     xg, wg = np.polynomial.legendre.leggauss(n)
     xg, wg = 0.5 * (xg + 1), 0.5 * wg
     U, V = np.meshgrid(xg, xg, indexing="ij")
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), (np.outer(wg, wg) * (1 - U)).ravel()
-
 
 def mapping(nodes, tri):
     x1, x2, x3 = (nodes[tri[:, k]] for k in range(3))
@@ -127,7 +78,6 @@ def mapping(nodes, tri):
     invJ[:, 1, 0], invJ[:, 1, 1] = -J[:, 1, 0] / det, J[:, 0, 0] / det
     return x1, J, det, invJ
 
-
 def edge_structure(tri):
     nel = len(tri)
     e = np.stack([tri[:, [i, j]] for (i, j) in LOCAL_EDGES], axis=1)
@@ -135,9 +85,7 @@ def edge_structure(tri):
     uniq, inv = np.unique(np.sort(e, axis=2).reshape(-1, 2), axis=0, return_inverse=True)
     return inv.reshape(nel, 3), sgn, uniq, np.bincount(inv, minlength=len(uniq)) == 1
 
-
 def assemble_KM(nodes, tri):
-    """Matrizes globais K (rot-rot) e M (massa) a partir do elemento de referência."""
     el_edges, sgn, uniq, boundary = edge_structure(tri)
     x1, J, det, invJ = mapping(nodes, tri)
     ad = np.abs(det)
@@ -154,21 +102,7 @@ def assemble_KM(nodes, tri):
     M = sp.coo_matrix((Me.ravel(), (rows, cols)), shape=(nE, nE)).tocsr()
     return K, M, el_edges, sgn, boundary
 
-
-# ----------------------------------------------------------------------------
-# Problema de autovalores
-# ----------------------------------------------------------------------------
 def solve_eigen(nodes, tri, kind, nwant=5):
-    """
-    Retorna (autovalores fisicos ordenados, autovetores nas arestas (M-ortonormais), el_edges, sgn).
-    TE: n x u = 0 (arestas de contorno eliminadas);  TM: n x rot u = 0 (natural, todas as arestas).
-
-    O núcleo do rotacional (lambda = 0, campos gradientes) tem multiplicidade enorme e atrapalha o ARPACK
-    se o deslocamento ficar longe dos modos de interesse.  Por isso usa-se shift-and-invert com um
-    deslocamento sigma LOGO ACIMA de cada autovalor exato (1,003 lambda_exato) e pedem-se só tantos
-    autovalores quanto a multiplicidade exata: eles são os mais próximos de sigma (o zero está a ~lambda
-    de distância).  Os modos físicos encontrados são então reunidos e ordenados.
-    """
     K, M, el_edges, sgn, boundary = assemble_KM(nodes, tri)
     nE = K.shape[0]
     free = np.where(~boundary)[0] if kind == "TE" else np.arange(nE)
@@ -191,7 +125,6 @@ def solve_eigen(nodes, tri, kind, nwant=5):
     full[free] = vecs[:, o]
     return vals[o], full, el_edges, sgn
 
-
 def run(kind, meshes, use_gmsh=False):
     lam = []
     last = None
@@ -202,11 +135,9 @@ def run(kind, meshes, use_gmsh=False):
         last = (nodes, tri, vecs, el_edges, sgn)
     return np.array(lam), last
 
-
 def convergence_order(l1, l2, l3):
     r = (l1 - l2) / (l2 - l3)
     return np.log(r) / np.log(2) if r > 0 else np.nan
-
 
 def print_table(kind, lam, meshes, use_gmsh):
     ex = exact_eigs(kind)[:5]
@@ -218,11 +149,7 @@ def print_table(kind, lam, meshes, use_gmsh):
         a = convergence_order(lam[0, i], lam[1, i], lam[2, i])
         print(f"  l{i+1:<3d} {kind}{m}{n:<4d} {lex:12.4f} {lam[0,i]:12.4f} {lam[1,i]:12.4f} {lam[2,i]:12.4f} {a:7.3f}")
 
-
-# ----------------------------------------------------------------------------
-# Autovetores (quiver nos baricentros)
-# ----------------------------------------------------------------------------
-def plot_eigenvectors(kind, last, fname):
+def plot_eigenvectors(kind, last):
     nodes, tri, vecs, el_edges, sgn = last
     x1, J, det, invJ = mapping(nodes, tri)
     Nh = ref_basis(np.array([[1 / 3, 1 / 3]]))
@@ -230,7 +157,8 @@ def plot_eigenvectors(kind, last, fname):
     xc = x1 + np.einsum("eij,j->ei", J, np.array([1 / 3, 1 / 3]))
     ex = exact_eigs(kind)
     fig, ax = plt.subplots(2, 3, figsize=(15, 6.5))
-    ax.ravel()[-1].axis("off")                                  # 5 autovetores em 6 painéis
+    ax.ravel()[-1].axis("off")                                  
+
     for k, a in enumerate(ax.ravel()[:vecs.shape[1]]):
         u = np.einsum("ej,ejc->ec", sgn * vecs[:, k][el_edges], N)
         sel = np.sort(np.random.default_rng(0).choice(len(xc), min(len(xc), 450), replace=False))
@@ -239,13 +167,10 @@ def plot_eigenvectors(kind, last, fname):
         a.set_aspect("equal"); a.set_xlim(0, A_G); a.set_ylim(0, B_G)
         lex, m, n = ex[k]
         a.set_title(f"autovetor {k+1} ({kind}{m}{n}),  $\\lambda$ = {lex:.1f}")
-    plt.tight_layout()#; plt.savefig(fname, dpi=140)
-    #print("Figura salva em", fname)
-
+    plt.tight_layout()
 
 def plot_results_p2():
     use_gmsh = "--gmsh" in sys.argv
-    # malhas com h1/h2 = h2/h3 = 2:  nx = 16, 32, 64 retângulos em x (ny = nx/2), h = a/nx
     meshes = [0.005, 0.0025, 0.00125] if use_gmsh else [16, 32, 64]
     for kind in ("TE", "TM"):
         lam, last = run(kind, meshes, use_gmsh)

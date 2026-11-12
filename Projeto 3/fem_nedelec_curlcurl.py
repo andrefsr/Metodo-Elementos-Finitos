@@ -1,36 +1,3 @@
-"""
-Elementos de Nédélec (tipo 1, mais baixa ordem) em malhas triangulares - problema 2D
-    rot rot u + a u = f   em Omega = [-1,1]^2,       n x u = 0 sobre dOmega,      a = 1
-    f(x,y) = (2 pi^2 + 1) [ cos(pi x) sin(pi y) , -sin(pi x) cos(pi y) ]^T
-Solução exata:  u = [ cos(pi x) sin(pi y) , -sin(pi x) cos(pi y) ]^T
-
-Observação sobre o enunciado: na 1a componente de f e de u, o enunciado traz "sin(pi x)", mas para
-que n x u = 0 em y = +-1 (e para que u resolva a equação) a função deve ser sin(pi y):
-    rot u = -2 pi cos(pi x) cos(pi y)   =>   rot rot u = 2 pi^2 u   =>   rot rot u + u = (2 pi^2 + 1) u = f.
-O código usa sin(pi y).  (Troque em u_exact/f_source/curl_exact se o seu enunciado for outro.)
-
-Forma fraca em H0(rot, Omega):   (rot u, rot v) + a (u, v) = (f, v)   para todo v em H0(rot, Omega).
-
-Elemento de Nédélec de mais baixa ordem (uma função de base por aresta):
-    N_e = lambda_i grad(lambda_j) - lambda_j grad(lambda_i)      (aresta e orientada de i para j)
-  Elemento de referência (vértices (0,0), (1,0), (0,1); arestas 1:(1,2), 2:(2,3), 3:(3,1)):
-    N^1 = (1 - eta, xi),   N^2 = (-eta, xi),   N^3 = (-eta, xi - 1),   rot N^k = 2
-  Mapeamento (transformação de Piola covariante), x = x1 + J xi,  J = [x2-x1, x3-x1]:
-    N = J^{-T} N^,        rot N = (1/det J) rot^ N^
-  Matrizes do elemento a partir do elemento de referência:
-    K_ij = int rot N_i rot N_j dOmega = 2 / |det J|                            (rot N^ = 2)
-    M_ij = int N_i . N_j dOmega = |det J| sum_ab G_ab int N^_i,a N^_j,b dxi,   G = (J^T J)^{-1}
-    b_i  = int f . N_i dOmega = |det J| int f(x(xi)) . (J^{-T} N^_i) dxi
-  O grau de liberdade de cada aresta é a circulação tangencial int_e u.t dl (t: do menor para o maior
-  índice global de nó), de modo que as arestas de contorno (n x u = 0) têm grau de liberdade nulo e
-  suas equações são ELIMINADAS do sistema global.
-
-Estudo de convergência: malhas com h1/h2 = h2/h3 = h3/h4 = 2 (n = 4, 8, 16, 32 quadrados por lado,
-cada quadrado dividido em 2 triângulos; h = 2/n).  Também é possível usar malhas do Gmsh (--gmsh).
-alpha = ln(e_{h_i}/e_{h_{i+1}}) / ln 2,   e_h = ||u - u_h||_{L2}.
-
-Dependências: numpy, scipy, matplotlib  (e gmsh, só com --gmsh)
-"""
 import sys
 import numpy as np
 import scipy.sparse as sp
@@ -40,27 +7,16 @@ import matplotlib.pyplot as plt
 PI = np.pi
 A_COEF = 1.0
 
-
-# ----------------------------------------------------------------------------
-# Problema
-# ----------------------------------------------------------------------------
 def u_exact(x, y):
     return np.stack([np.cos(PI * x) * np.sin(PI * y), -np.sin(PI * x) * np.cos(PI * y)], axis=-1)
-
 
 def curl_exact(x, y):
     return -2 * PI * np.cos(PI * x) * np.cos(PI * y)
 
-
 def f_source(x, y):
     return (2 * PI ** 2 + A_COEF) * u_exact(x, y)
 
-
-# ----------------------------------------------------------------------------
-# Malhas triangulares
-# ----------------------------------------------------------------------------
 def mesh_structured(n):
-    """n x n quadrados em [-1,1]^2, cada um dividido em 2 triângulos (anti-horários)."""
     xs = np.linspace(-1.0, 1.0, n + 1)
     X, Y = np.meshgrid(xs, xs, indexing="ij")
     nodes = np.stack([X.ravel(), Y.ravel()], axis=1)
@@ -72,9 +28,7 @@ def mesh_structured(n):
             tri += [(a, b, c), (a, c, d)]
     return nodes, np.array(tri)
 
-
 def mesh_gmsh(h):
-    """Malha não estruturada do Gmsh (import gmsh dentro do Python), tamanho máximo h."""
     import gmsh
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -99,33 +53,23 @@ def mesh_gmsh(h):
     tri[det < 0, 1], tri[det < 0, 2] = tri[det < 0, 2].copy(), tri[det < 0, 1].copy()
     return nodes, tri
 
-
-# ----------------------------------------------------------------------------
-# Elemento de referência e mapeamento
-# ----------------------------------------------------------------------------
 LOCAL_EDGES = [(0, 1), (1, 2), (2, 0)]
 
-
 def ref_basis(xi):
-    """Funções de base de Nédélec no elemento de referência: array (nq, 3, 2)."""
     x, e = xi[:, 0], xi[:, 1]
     N1 = np.stack([1 - e, x], axis=1)
     N2 = np.stack([-e, x], axis=1)
     N3 = np.stack([-e, x - 1], axis=1)
     return np.stack([N1, N2, N3], axis=1)
 
-
 def quad_tri(n):
-    """Gauss no triângulo unitário (Duffy), n x n pontos; pesos somam 1/2."""
     xg, wg = np.polynomial.legendre.leggauss(n)
     xg, wg = 0.5 * (xg + 1), 0.5 * wg
     U, V = np.meshgrid(xg, xg, indexing="ij")
     W = np.outer(wg, wg) * (1 - U)
     return np.stack([U.ravel(), (V * (1 - U)).ravel()], axis=1), W.ravel()
 
-
 def mapping(nodes, tri):
-    """x1, J, det J, J^{-1} de cada elemento (mapeamento afim x = x1 + J xi)."""
     x1, x2, x3 = (nodes[tri[:, k]] for k in range(3))
     J = np.stack([np.stack([x2[:, 0] - x1[:, 0], x3[:, 0] - x1[:, 0]], axis=1),
                   np.stack([x2[:, 1] - x1[:, 1], x3[:, 1] - x1[:, 1]], axis=1)], axis=1)   # (nel,2,2)
@@ -135,10 +79,6 @@ def mapping(nodes, tri):
     invJ[:, 1, 0], invJ[:, 1, 1] = -J[:, 1, 0] / det, J[:, 0, 0] / det
     return x1, J, det, invJ
 
-
-# ----------------------------------------------------------------------------
-# Arestas: numeração global, orientação e arestas de contorno
-# ----------------------------------------------------------------------------
 def edge_structure(tri):
     nel = len(tri)
     e = np.stack([tri[:, [i, j]] for (i, j) in LOCAL_EDGES], axis=1)                # (nel,3,2)
@@ -148,23 +88,16 @@ def edge_structure(tri):
     boundary = np.bincount(inv, minlength=len(uniq)) == 1
     return el_edges, sgn, uniq, boundary
 
-
-# ----------------------------------------------------------------------------
-# Matrizes e vetor de carga (expressões baseadas no elemento de referência)
-# ----------------------------------------------------------------------------
 def element_matrices(nodes, tri, sgn):
     x1, J, det, invJ = mapping(nodes, tri)
     ad = np.abs(det)
-    # rigidez: int rot N_i rot N_j = 2/|det J|    (rot N^ = 2 em todas as funções de base)
     Ke = (2.0 / ad)[:, None, None] * sgn[:, :, None] * sgn[:, None, :]
-    # massa: |det J| sum_ab G_ab Mhat_ab,ij   com  G = J^{-1} J^{-T}
     xq, wq = quad_tri(3)                                                              # exato até grau 5
     Nh = ref_basis(xq)                                                                # (q,3,2)
     Mhat = np.einsum("q,qia,qjb->ijab", wq, Nh, Nh)                                   # integrais de referência
     G = np.einsum("eak,ebk->eab", invJ, invJ)
     Me = ad[:, None, None] * np.einsum("eab,ijab->eij", G, Mhat) * sgn[:, :, None] * sgn[:, None, :]
     return Ke, Me
-
 
 def load_vector(nodes, tri, sgn, nq=6):
     x1, J, det, invJ = mapping(nodes, tri)
@@ -174,7 +107,6 @@ def load_vector(nodes, tri, sgn, nq=6):
     fq = f_source(xp[..., 0], xp[..., 1])                                             # (e,q,2)
     N = np.einsum("eki,qjk->eqji", invJ, Nh)                                          # J^{-T} N^  (e,q,3,2)
     return np.abs(det)[:, None] * sgn * np.einsum("q,eqi,eqji->ej", wq, fq, N)
-
 
 def assemble(nodes, tri):
     el_edges, sgn, uniq, boundary = edge_structure(tri)
@@ -187,21 +119,14 @@ def assemble(nodes, tri):
     b = np.bincount(el_edges.ravel(), weights=be.ravel(), minlength=nE)
     return A, b, el_edges, sgn, boundary
 
-
 def solve(nodes, tri):
-    """Sistema reduzido: as equações das arestas de contorno (n x u = 0) são eliminadas."""
     A, b, el_edges, sgn, boundary = assemble(nodes, tri)
     free = np.where(~boundary)[0]
     u = np.zeros(A.shape[0])
     u[free] = spla.spsolve(A[free][:, free].tocsc(), b[free])
     return u, el_edges, sgn
 
-
-# ----------------------------------------------------------------------------
-# Pós-processamento: erro em L2 (e em rot), campo nos baricentros
-# ----------------------------------------------------------------------------
 def field_at(nodes, tri, u, el_edges, sgn, xi):
-    """u_h nos pontos de referência xi (nq,2): retorna posições (e,q,2) e u_h (e,q,2)."""
     x1, J, det, invJ = mapping(nodes, tri)
     Nh = ref_basis(xi)
     N = np.einsum("eki,qjk->eqji", invJ, Nh)
@@ -209,7 +134,6 @@ def field_at(nodes, tri, u, el_edges, sgn, xi):
     uh = np.einsum("ej,eqji->eqi", coef, N)
     xp = x1[:, None, :] + np.einsum("eij,qj->eqi", J, xi)
     return xp, uh, det
-
 
 def errors(nodes, tri, u, el_edges, sgn, nq=6):
     xq, wq = quad_tri(nq)
@@ -221,13 +145,10 @@ def errors(nodes, tri, u, el_edges, sgn, nq=6):
     ecurl = np.sqrt(np.sum(w * (curl_exact(xp[..., 0], xp[..., 1]) - curl_h[:, None]) ** 2))
     return eL2, ecurl
 
-
 def self_check():
-    """Verificações do elemento: circulação unitária e reprodução de campos do espaço de Nédélec."""
     nodes, tri = mesh_structured(3)
     nodes = nodes + 0.03 * np.sin(5 * nodes[:, ::-1])               # distorce (malha não uniforme)
     el_edges, sgn, uniq, _ = edge_structure(tri)
-    # interpolante de v = (c1 - b y, c2 + b x): graus de liberdade = circulação int_e v.t dl (exata, v linear)
     c1, c2, bb = 0.7, -0.4, 1.3
     t = nodes[uniq[:, 1]] - nodes[uniq[:, 0]]                                         # do menor para o maior índice
     mid = 0.5 * (nodes[uniq[:, 0]] + nodes[uniq[:, 1]])
@@ -240,10 +161,6 @@ def self_check():
     print(f"[teste] reprodução de v = (c1 - b y, c2 + b x): erro = {np.max(abs(uh - vex)):.2e};  "
           f"rot v = 2b: erro = {np.max(abs(curl_h - 2 * bb)):.2e}")
 
-
-# ----------------------------------------------------------------------------
-# Execução: tabela de convergência e quiver
-# ----------------------------------------------------------------------------
 def run(use_gmsh=False, ns=(4, 8, 16, 32)):
     results = []
     for n in ns:
@@ -255,7 +172,6 @@ def run(use_gmsh=False, ns=(4, 8, 16, 32)):
                             ecurl=ecurl, ndof=len(u), nel=len(tri)))
     return results
 
-
 def print_table(results):
     print(f"\n{'h':>9s} {'#arestas':>9s} {'#elem.':>8s} {'||u-u_h||_L2':>14s} {'alpha':>7s} "
           f"{'||rot(u-u_h)||':>15s} {'alpha_rot':>10s}")
@@ -264,8 +180,7 @@ def print_table(results):
         ac = "-" if i == 0 else f"{np.log(results[i-1]['ecurl'] / r['ecurl']) / np.log(2):.3f}"
         print(f"{r['h']:9.5f} {r['ndof']:9d} {r['nel']:8d} {r['eL2']:14.6e} {a:>7s} {r['ecurl']:15.6e} {ac:>10s}")
 
-
-def plot_quiver(results, fname="campo_u_quiver.png"):
+def plot_quiver(results):
     fig, ax = plt.subplots(1, 2, figsize=(14, 6.5))
     for a, r, nome in ((ax[0], results[0], "h1"), (ax[1], results[-1], "h4")):
         xi = np.array([[1 / 3, 1 / 3]])
@@ -282,9 +197,7 @@ def plot_quiver(results, fname="campo_u_quiver.png"):
             if len(r["tri"]) <= 200 else None
         a.set_aspect("equal"); a.set_xlabel("x"); a.set_ylabel("y")
         a.set_title(f"Campo $u_h$ (Nédélec, malha {nome}: h = {r['h']:.4f}, {r['nel']} elementos)")
-    plt.tight_layout()#; plt.savefig(fname, dpi=140)
-    # print("Figura salva em", fname)
-
+    plt.tight_layout()
 
 def plot_results_p1():
     use_gmsh = "--gmsh" in sys.argv
